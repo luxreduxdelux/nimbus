@@ -2,6 +2,8 @@ pub use common;
 
 //================================================================
 
+use ed25519_dalek::Signer;
+use ed25519_dalek::SigningKey;
 use std::sync::mpsc;
 use tokio::net::TcpStream;
 
@@ -14,18 +16,22 @@ use common::prelude::*;
 pub struct Client {
     thread: Thread,
     pub server: Server,
+    pub key: AccountKey,
+    pub index: u64,
     pub ready: bool,
     pub error: Option<Error>,
 }
 
 impl Client {
     /// Create a new client.
-    pub fn new(address: String, account: Account) -> Self {
+    pub fn new(address: String, key: AccountKey, account: AccountConnect) -> Self {
         Self {
-            thread: Thread::new(address, account.clone()),
+            thread: Thread::new(address, account),
             server: Server::default(),
-            ready: false,
-            error: None,
+            key,
+            index: Default::default(),
+            ready: Default::default(),
+            error: Default::default(),
         }
     }
 
@@ -40,16 +46,31 @@ impl Client {
                 CommandServer::Error(error) => {
                     self.error = Some(error);
                 }
-                CommandServer::Enter(server) => {
+                CommandServer::Enter(index, server) => {
                     self.server = server;
+                    self.index = index;
                     self.ready = true;
                 }
                 CommandServer::Leave => {
                     self.ready = false;
                 }
+                CommandServer::Nonce(challenge) => {
+                    let key = SigningKey::from_bytes(&self.key);
+                    let challenge = key.sign(&challenge);
+
+                    self.thread
+                        .tx
+                        .send(CommandClient::Nonce(challenge.to_vec()))
+                        .unwrap();
+                }
                 CommandServer::Message(message) => {
-                    // TO-DO use channel index
-                    self.server.push_message(0, message);
+                    self.server.push_message(message.channel, message);
+                }
+                CommandServer::MessageDelete(channel, message) => {
+                    self.server.delete_message(channel, message);
+                }
+                CommandServer::AccountChannel(index, channel) => {
+                    self.server.set_account_channel(index, channel);
                 }
                 CommandServer::AccountState(index, state) => {
                     self.server.set_account_state(index, state);
@@ -63,42 +84,8 @@ impl Client {
         Ok(())
     }
 
-    pub fn send_text(&self, text: &str) {
-        self.thread
-            .tx
-            .send(CommandClient::Message(MessageKind::Text(text.to_string())))
-            .unwrap();
-    }
-
-    pub fn send_file(&self, name: &str, file: Vec<u8>) {
-        self.thread
-            .tx
-            .send(CommandClient::Message(MessageKind::File(
-                name.to_string(),
-                file,
-            )))
-            .unwrap();
-    }
-
-    pub fn send_sticker(&self, sticker: u64) {
-        self.thread
-            .tx
-            .send(CommandClient::Message(MessageKind::Sticker(sticker)))
-            .unwrap();
-    }
-
-    pub fn set_state(&self, state: AccountState) {
-        self.thread
-            .tx
-            .send(CommandClient::AccountState(state))
-            .unwrap();
-    }
-
-    pub fn set_write(&self, write: bool) {
-        self.thread
-            .tx
-            .send(CommandClient::AccountWrite(write))
-            .unwrap();
+    pub fn send(&self, command: CommandClient) -> anyhow::Result<()> {
+        Ok(self.thread.tx.send(command)?)
     }
 }
 
@@ -110,7 +97,7 @@ struct Thread {
 }
 
 impl Thread {
-    fn new(address: String, account: Account) -> Self {
+    fn new(address: String, account: AccountConnect) -> Self {
         let (tx_s, rx) = mpsc::channel::<CommandServer>();
         let (tx, rx_s) = mpsc::channel::<CommandClient>();
         tokio::spawn(async move {

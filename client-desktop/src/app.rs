@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
 use eframe::egui::{
     self, Color32, ColorImage, FontId, ImageSource, Response, RichText, Spinner, TextureHandle,
     Vec2,
 };
+use std::collections::HashMap;
 
 //================================================================
 
@@ -17,6 +16,8 @@ use client::*;
 pub struct App {
     user: User,
     client: Option<Client>,
+    index_channel: ChannelID,
+    index_message: Option<u64>,
     entry: String,
     image: HashMap<u64, TextureHandle>,
 }
@@ -47,9 +48,12 @@ impl App {
     fn draw(&mut self, ui: &mut egui::Ui) {
         //ui.request_repaint();
 
+        //self.draw_setup(ui);
+        //return;
+
         if let Some(client) = &mut self.client {
             client.update(|command| match command {
-                CommandServer::Enter(server) => {
+                CommandServer::Enter(_, server) => {
                     for (index, sticker) in &server.sticker {
                         println!("[CLIENT] Load image: {index}");
                         Self::load_image(&mut self.image, *index, &sticker.data, ui);
@@ -70,10 +74,42 @@ impl App {
         }
     }
 
+    fn draw_setup(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::top("top").show_inside(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.button("<-");
+                ui.label(RichText::new("Setup").strong());
+            });
+        });
+        egui::Panel::left("left").show_inside(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.selectable_value(&mut 1, 1, "1");
+                });
+        });
+
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            ui.label("Nick Name");
+            ui.text_edit_singleline(&mut self.user.name_nick);
+
+            ui.label("User Name");
+            ui.text_edit_singleline(&mut self.user.name_user);
+
+            ui.label("User Info");
+            ui.text_edit_multiline(&mut self.user.info);
+        });
+    }
+
     fn draw_main(&mut self, ui: &mut egui::Ui) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(ui.available_height() * 0.5 - 128.0);
+                ui.add_space(ui.available_height() * 0.5 - 224.0);
+
+                ui.add(
+                    egui::Image::new(egui::include_image!("../asset/logo.svg"))
+                        .fit_to_exact_size(Vec2::new(96.0, 96.0)),
+                );
 
                 ui.label(
                     RichText::new("Welcome to Nimbus!")
@@ -81,34 +117,100 @@ impl App {
                         .strong(),
                 );
 
-                let icon = if let Some(icon) = &self.user.icon {
-                    egui::Image::new(ImageSource::Uri(format!("file://{icon}").into()))
-                        .fit_to_exact_size(Vec2::new(96.0, 96.0))
+                ui.separator();
+
+                /*
+                ui.label("Identifier (?)")
+                    .on_hover_text("An identifier is what will represent you in a Nimbus server and can validate that it is you who is logging into a server.\nDo NOT distribute your identifier file to anyone.");
+
+                if let Some(identifier) = &self.user.identifier {
+                    ui.label(RichText::new(&identifier.name).strong());
+
+                    ui.button("New Identifier");
+                    ui.button("Save Identifier");
+                    ui.button("Load Identifier");
                 } else {
-                    egui::Image::new(egui::include_image!("../asset/user.svg"))
-                        .fit_to_exact_size(Vec2::new(96.0, 96.0))
-                };
+                    ui.label(RichText::new("...").weak());
 
-                ui.label("Icon");
-                if ui.button(icon).clicked()
-                    && let Some(icon) = rfd::FileDialog::new()
-                        .set_title("Select an user icon.")
-                        .pick_file()
-                {
-                    self.user.icon = Some(icon.display().to_string());
-                };
+                    ui.button("New Identifier");
+                    ui.button("Load Identifier");
+                }
+                */
 
-                ui.label("Name");
-                ui.text_edit_singleline(&mut self.user.name);
+                /*
+                if self.user.icon.is_some() {
+                    if ui.button("Remove Icon").clicked() {
+                        self.user.icon = None;
+                    };
+                } else {
+                    if ui.button("Add Icon").clicked()
+                        && let Some(icon) = rfd::FileDialog::new()
+                            .set_title("Select an user icon.")
+                            .pick_file()
+                        && let Ok(file) = std::fs::read(icon)
+                    {
+                        self.user.icon = Some(file);
+                    };
+                }
+
+                if let Some(icon) = &self.user.icon {
+                    ui.add(
+                        egui::Image::new(ImageSource::Uri(format!("file://{icon}").into()))
+                            .fit_to_exact_size(Vec2::new(96.0, 96.0))
+                            .corner_radius(96.0),
+                    );
+                } else {
+                    ui.add(
+                        egui::Image::new(egui::include_image!("../asset/user.svg"))
+                            .fit_to_exact_size(Vec2::new(96.0, 96.0)),
+                    );
+                };
+                */
+
+                ui.label("Nick Name");
+                ui.text_edit_singleline(&mut self.user.name_nick);
+
+                ui.label("User Name");
+                ui.text_edit_singleline(&mut self.user.name_user);
+
+                ui.label("Info");
+                ui.text_edit_multiline(&mut self.user.info);
 
                 ui.label("Server Address");
                 ui.text_edit_singleline(&mut self.user.address);
 
-                if ui.button("Log In").clicked() {
-                    self.client = Some(Client::new(
-                        self.user.address.to_string(),
-                        self.user.clone().into(),
-                    ));
+                ui.separator();
+
+                let valid_nick = AccountConnect::is_valid_nick(&self.user.name_nick);
+                let valid_user = AccountConnect::is_valid_user(&self.user.name_user);
+                let valid_info = AccountConnect::is_valid_info(&self.user.info);
+                let valid = valid_nick.is_ok() && valid_user.is_ok() && valid_info.is_ok();
+
+                ui.add_enabled_ui(true, |ui| {
+                    if ui.button("Log In").clicked() {
+                        self.client = Some(Client::new(
+                            self.user.address.to_string(),
+                            self.user.identifier.0,
+                            self.user.clone().into(),
+                        ));
+                    }
+                });
+
+                if let Err(error) = valid_nick {
+                    #[rustfmt::skip]
+                    match error {
+                        NickError::Empty  => ui.label("Nick name cannot be empty."),
+                        NickError::Length => ui.label(format!("Nick name cannot be greater than {} characters.", AccountConnect::LIMIT_NICK_NAME)),
+                    };
+                }
+
+                if let Err(error) = valid_user {
+                    #[rustfmt::skip]
+                    match error {
+                        UserError::Empty        => ui.label("User name cannot be empty."),
+                        UserError::Length       => ui.label(format!("User name cannot be greater than {} characters.", AccountConnect::LIMIT_USER_NAME)),
+                        UserError::InvalidASCII => ui.label("User name must use a-z, A-Z, 0-9 characters."),
+                    };
                 }
             });
         });
@@ -125,20 +227,22 @@ impl App {
                         .strong(),
                 );
 
+                /*
                 let icon = if let Some(icon) = &self.user.icon {
-                    //println!("{icon}");
                     egui::Image::new(ImageSource::Uri(format!("file://{icon}").into()))
                         .fit_to_exact_size(Vec2::new(96.0, 96.0))
+                        .corner_radius(96.0)
                 } else {
                     egui::Image::new(egui::include_image!("../asset/user.svg"))
                         .fit_to_exact_size(Vec2::new(96.0, 96.0))
                 };
 
                 ui.add(icon);
+                */
 
-                ui.label(&self.user.name);
+                ui.label(&self.user.name_user);
 
-                ui.add(Spinner::new().size(32.0));
+                ui.add(Spinner::new().size(48.0));
 
                 if ui.button("Cancel").clicked() {
                     self.client = None;
@@ -155,7 +259,7 @@ impl App {
                 let response = Self::button_image(
                     ui,
                     ImageSource::Uri("file:///home/lux/Desktop/deer.png".to_string().into()),
-                    Vec2::new(40.0, 40.0),
+                    Vec2::new(32.0, 32.0),
                 );
 
                 if response.clicked() {
@@ -164,18 +268,32 @@ impl App {
 
                 #[rustfmt::skip]
                 egui::Popup::from_toggle_button_response(&response).show(|ui| {
-                    if ui.button("Online").clicked()         { client.set_state(AccountState::Online);       };
-                    if ui.button("Away").clicked()           { client.set_state(AccountState::Away);         };
-                    if ui.button("Do Not Disturb").clicked() { client.set_state(AccountState::DoNotDisturb); };
-                    if ui.button("Offline").clicked()        { client.set_state(AccountState::Offline);      };
+                    let mut state = client.server.account[&client.index].state.clone();
+                    let mut click = false;
+                    let state_list = [
+                        (AccountState::Online, "Online"),
+                        (AccountState::Away, "Away"),
+                        (AccountState::Busy, "Busy"),
+                        (AccountState::Offline, "Offline")
+                    ];
+
+                    for (s, n) in state_list {
+                        if ui.selectable_value(&mut state, s, n).clicked() {
+                            click = true;
+                        }
+                    }
+
+                    if click {
+                        client.send(CommandClient::AccountState(state));
+                    }
                 });
             } else {
                 ui.add(
                     egui::Image::new(ImageSource::Uri(
                         "file:///home/lux/Desktop/deer.png".to_string().into(),
                     ))
-                    .fit_to_exact_size(Vec2::new(40.0, 40.0))
-                    .corner_radius(40.0),
+                    .fit_to_exact_size(Vec2::new(32.0, 32.0))
+                    .corner_radius(32.0),
                 );
             }
 
@@ -187,7 +305,7 @@ impl App {
             let color = match account.state {
                 AccountState::Online => Color32::GREEN,
                 AccountState::Away => Color32::ORANGE,
-                AccountState::DoNotDisturb => Color32::RED,
+                AccountState::Busy => Color32::RED,
                 AccountState::Offline => Color32::DARK_GRAY,
             };
 
@@ -195,7 +313,7 @@ impl App {
                 .tint(color)
                 .paint_at(ui, point);
 
-            ui.label(RichText::new(&account.name).strong());
+            ui.label(RichText::new(&account.name_nick).strong());
 
             if client.is_some() {
                 Self::button_image(
@@ -241,54 +359,48 @@ impl App {
         let client = self.client.as_mut().unwrap();
 
         egui::Panel::left("left").show_inside(ui, |ui| {
+            ui.add_space(5.0);
+
             ui.horizontal(|ui| {
-                /*
-                egui::ScrollArea::vertical()
-                    .id_salt("server")
-                    .auto_shrink([true, true])
-                    .show(ui, |ui| {
-                        ui.vertical(|ui| {
-                            for x in 0..32 {
-                                Self::button_image(
-                                    ui,
-                                    ImageSource::Uri(
-                                        "file:///home/lux/Desktop/deer.png".to_string().into(),
-                                    ),
-                                    Vec2::new(40.0, 40.0),
-                                );
-                            }
-                        });
-                    });
+                Self::button_image(
+                    ui,
+                    ImageSource::Uri("file:///home/lux/Desktop/deer.png".to_string().into()),
+                    Vec2::new(32.0, 32.0),
+                );
 
-                ui.separator();
-                */
-
-                egui::ScrollArea::vertical()
-                    .id_salt("channel")
-                    .auto_shrink([true, true])
-                    .show(ui, |ui| {
-                        ui.vertical(|ui| {
-                            for (_, channel) in &client.server.channel {
-                                ui.button(&format!("#{}", channel.name));
-                            }
-                        });
-                    });
+                ui.label(RichText::new(&client.server.name).strong());
             });
 
             ui.separator();
 
-            /*
-            // TO-DO use index from server for us
-            let account = client
-                .server
-                .account
-                .iter()
-                .find(|x| x.name == self.user.name)
-                .cloned()
-                .unwrap();
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .max_height(ui.available_height() - 48.0)
+                .show_rows(ui, 8.0, client.server.channel.len(), |ui, range| {
+                    for i in range {
+                        if ui
+                            .selectable_value(
+                                &mut self.index_channel,
+                                i as u64,
+                                &format!("#{}", client.server.channel[&(i as u64)].name),
+                            )
+                            .clicked()
+                        {
+                            client.send(CommandClient::AccountChannel(i as ChannelID));
+                        };
+                    }
+                });
 
-            Self::draw_account(ui, Some(client), &account);
-            */
+            //ui.button("New Channel");
+
+            egui::Area::new("account".into())
+                .fixed_pos([ui.cursor().min.x, ui.viewport_rect().max.y - 48.0])
+                .show(ui, |ui| {
+                    ui.separator();
+
+                    let account = client.server.account[&client.index].clone();
+                    Self::draw_account(ui, Some(client), &account);
+                });
         });
 
         egui::Panel::right("right").show_inside(ui, |ui| {
@@ -302,13 +414,17 @@ impl App {
         });
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.label("channel");
+            let channel = client.server.channel.get(&self.index_channel).unwrap();
+            let shape_x = ui.max_rect().width();
+
+            ui.label(RichText::new(&format!("#{}", channel.name)).strong());
+            ui.label(&channel.info);
 
             ui.separator();
 
             egui::ScrollArea::vertical()
-                .auto_shrink([false, true])
-                .max_height(ui.available_height() - 56.0)
+                .auto_shrink([false, false])
+                .max_height(ui.available_height() - 48.0)
                 .show(ui, |ui| {
                     /*
                     for x in 0..32 {
@@ -324,27 +440,29 @@ impl App {
                     }
                     */
 
-                    let channel = client.server.channel.get(&0).unwrap();
-
                     for (index, message) in &channel.message {
-                        ui.horizontal(|ui| {
+                        let response = ui.horizontal(|ui| {
                             let image = egui::Image::new(ImageSource::Uri(
                                 "file:///home/lux/Desktop/deer.png".to_string().into(),
                             ))
-                            .fit_to_exact_size(Vec2::new(40.0, 40.0))
-                            .corner_radius(40.0);
+                            .fit_to_exact_size(Vec2::new(32.0, 32.0))
+                            .corner_radius(32.0);
 
                             ui.add(image);
 
                             ui.vertical(|ui| {
+                                let from = message.account(&client.server);
+
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new(&from.name_nick).strong());
+                                    ui.label(RichText::new("9:41").weak());
+                                });
+
                                 match &message.kind {
-                                    //
                                     MessageKind::Text(text) => {
-                                        ui.label(RichText::new(&message.from).strong());
                                         ui.label(text);
                                     }
                                     MessageKind::File(name, data) => {
-                                        ui.label(RichText::new(&message.from).strong());
                                         if ui.button(format!("File attachment ({name})")).clicked()
                                         {
                                             if let Some(path) = rfd::FileDialog::new()
@@ -357,40 +475,44 @@ impl App {
                                         }
                                     }
                                     MessageKind::Sticker(sticker) => {
-                                        ui.label(RichText::new(&message.from).strong());
-
                                         if let Some(image) = self.image.get(&sticker) {
                                             ui.image(image);
                                         }
                                     }
                                 }
-
-                                #[rustfmt::skip]
-                                ui.horizontal(|ui| {
-                                    Self::button_image(ui, egui::include_image!("../asset/reply.svg"),  Vec2::new(24.0, 24.0));
-                                    Self::button_image(ui, egui::include_image!("../asset/emote.svg"),  Vec2::new(24.0, 24.0));
-                                    Self::button_image(ui, egui::include_image!("../asset/copy.svg"),   Vec2::new(24.0, 24.0));
-                                    Self::button_image(ui, egui::include_image!("../asset/edit.svg"),   Vec2::new(24.0, 24.0));
-                                    Self::button_image(ui, egui::include_image!("../asset/delete.svg"), Vec2::new(24.0, 24.0));
-                                });
                             });
+                        }).response;
+
+                        response.context_menu(|ui| {
+                            #[rustfmt::skip]
+                            Self::button_image(ui, egui::include_image!("../asset/reply.svg"),  Vec2::new(24.0, 24.0));
+                            Self::button_image(ui, egui::include_image!("../asset/emote.svg"),  Vec2::new(24.0, 24.0));
+                            Self::button_image(ui, egui::include_image!("../asset/copy.svg"),   Vec2::new(24.0, 24.0));
+                            Self::button_image(ui, egui::include_image!("../asset/star_a.svg"), Vec2::new(24.0, 24.0));
+                            Self::button_image(ui, egui::include_image!("../asset/edit.svg"),   Vec2::new(24.0, 24.0));
+
+                            if Self::button_image(ui, egui::include_image!("../asset/delete.svg"), Vec2::new(24.0, 24.0)).clicked() {
+                                client.send(CommandClient::MessageDelete(self.index_channel, *index));
+                            };
                         });
 
                         ui.add_space(4.0);
                     }
                 });
 
+            let mut write = Vec::new();
+
+            for (_, account) in &client.server.account {
+                if account.index != client.index && account.write && account.channel == self.index_channel {
+                    write.push(account.name_nick.clone());
+                }
+            }
+
+            let push = if write.is_empty() { 48.0 } else { 66.0 };
+
             egui::Area::new("floating_text".into())
-                .fixed_pos([ui.cursor().min.x, ui.viewport_rect().max.y - 32.0])
+                .fixed_pos([ui.cursor().min.x, ui.viewport_rect().max.y - push])
                 .show(ui, |ui| {
-                    let mut write = Vec::new();
-
-                    for (_, account) in &client.server.account {
-                        if account.write {
-                            write.push(account.name.clone());
-                        }
-                    }
-
                     if !write.is_empty() {
                         egui::Frame::new()
                             .fill(egui::Color32::from_black_alpha(224))
@@ -400,7 +522,10 @@ impl App {
                                 if write.len() == 1 {
                                     ui.label(format!("{} is typing...", write[0]));
                                 } else if write.len() == 2 {
-                                    ui.label(format!("{} and {} are typing...", write[0], write[1]));
+                                    ui.label(format!(
+                                        "{} and {} are typing...",
+                                        write[0], write[1]
+                                    ));
                                 } else if write.len() == 3 {
                                     ui.label(format!(
                                         "{}, {} and {} are typing...",
@@ -411,6 +536,8 @@ impl App {
                                 }
                             });
                     }
+
+                    ui.separator();
 
                     ui.horizontal(|ui| {
                         if Self::button_image(
@@ -425,34 +552,42 @@ impl App {
                                 .pick_file()
                                 && let Ok(file) = std::fs::read(path.clone())
                             {
-                                client.send_file(
+                                /*
+                                client.send_file(self.index_channel,
                                     &path
                                         .file_name()
                                         .map(|x| x.display().to_string())
                                         .unwrap_or("file".to_string()),
                                     file,
                                 );
+                                */
                             }
                         };
 
                         // TO-DO
                         let empty = self.entry.is_empty();
                         let text = ui.add_sized(
-                            [(ui.available_width() - 144.0).max(0.0), 0.0],
-                            egui::TextEdit::singleline(&mut self.entry).id("client_buffer".into()),
+                            [(shape_x - 192.0).max(0.0), 32.0],
+                            egui::TextEdit::singleline(&mut self.entry)
+                                .font(FontId::default())
+                                .vertical_align(egui::Align::Center)
+                                .id("client_buffer".into()),
                         );
 
                         if text.changed() {
                             if empty && !self.entry.is_empty() {
-                                client.set_write(true);
+                                client.send(CommandClient::AccountWrite(true));
                             } else if !empty && self.entry.is_empty() {
-                                client.set_write(false);
+                                client.send(CommandClient::AccountWrite(false));
                             }
                         }
 
                         if text.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                            client.send_text(&self.entry);
-                            client.set_write(false);
+                            client.send(CommandClient::Message(
+                                self.index_channel,
+                                MessageKind::Text(self.entry.clone()),
+                            ));
+                            client.send(CommandClient::AccountWrite(false));
                             self.entry.clear();
                             text.request_focus();
                         }
@@ -467,7 +602,7 @@ impl App {
                                 if Self::button_image(ui, image.into(), Vec2::new(32.0, 32.0))
                                     .clicked()
                                 {
-                                    client.send_sticker(*index);
+                                    //client.send_sticker(self.index_channel, *index);
                                 }
                             }
 
@@ -495,9 +630,11 @@ impl App {
                         )
                         .clicked()
                         {
-                            // TO-DO
-                            client.send_text(&self.entry);
-                            client.set_write(false);
+                            client.send(CommandClient::Message(
+                                self.index_channel,
+                                MessageKind::Text(self.entry.clone()),
+                            ));
+                            client.send(CommandClient::AccountWrite(false));
                             self.entry.clear();
                         };
                     });

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use crate::account::*;
 use crate::channel::*;
 use crate::message::*;
+use crate::sticker::*;
 
 //================================================================
 
@@ -17,49 +18,85 @@ pub struct Server {
     pub count_channel: u64,
     // TO-DO make private
     pub count_sticker: u64,
-    pub account: BTreeMap<u64, Account>,
-    pub channel: BTreeMap<u64, Channel>,
-    pub sticker: BTreeMap<u64, Sticker>,
+    pub account_key: BTreeMap<AccountKey, AccountID>,
+    pub account: BTreeMap<AccountID, Account>,
+    pub channel: BTreeMap<ChannelID, Channel>,
+    pub sticker: BTreeMap<StickerID, Sticker>,
+    pub name: String,
+    pub info: String,
+    pub icon: Option<Vec<u8>>,
 }
 
 impl Server {
+    const DEFAULT_NAME: &str = "Nimbus Server";
+    const DEFAULT_INFO: &str = "A default Nimbus server, for the people, by the people.\nhttps://github.com/luxreduxdelux/nimbus";
     const PATH_FILE: &str = "server.data";
+
+    //================================================================
 
     pub fn push_account(&mut self, account: Account) {
         self.account.insert(self.count_account, account);
         self.count_account += 1;
     }
 
+    /*
+    pub fn delete_account(&mut self, account: ChannelID) {
+        // TO-DO should search every single message by this account and delete it
+    }
+    */
+
+    pub fn set_account_channel(&mut self, account: AccountID, channel: ChannelID) {
+        if let Some(account) = self.account.get_mut(&account) {
+            account.channel = channel;
+        }
+    }
+
+    pub fn set_account_state(&mut self, account: AccountID, state: AccountState) {
+        if let Some(account) = self.account.get_mut(&account) {
+            account.state = state;
+        }
+    }
+
+    pub fn set_account_write(&mut self, account: AccountID, write: bool) {
+        if let Some(account) = self.account.get_mut(&account) {
+            account.write = write;
+        }
+    }
+
+    //================================================================
+
     pub fn push_channel(&mut self, channel: Channel) {
         self.channel.insert(self.count_channel, channel);
         self.count_channel += 1;
     }
 
-    pub fn set_channel_name(&mut self, channel: u64, name: &str) {}
-    pub fn set_channel_info(&mut self, channel: u64, info: &str) {}
+    pub fn delete_channel(&mut self, channel: ChannelID) {
+        self.channel.remove(&channel);
+    }
 
-    pub fn push_message(&mut self, channel: u64, message: Message) {
+    pub fn set_channel_name(&mut self, channel: ChannelID, name: &str) {}
+    pub fn set_channel_info(&mut self, channel: ChannelID, info: &str) {}
+
+    //================================================================
+
+    pub fn push_message(&mut self, channel: ChannelID, message: Message) {
         if let Some(channel) = self.channel.get_mut(&channel) {
             channel.message.insert(channel.count_message, message);
             channel.count_message += 1;
         }
     }
 
+    pub fn delete_message(&mut self, channel: ChannelID, message: MessageID) {
+        if let Some(channel) = self.channel.get_mut(&channel) {
+            channel.message.remove(&message);
+        }
+    }
+
+    //================================================================
+
     pub fn push_sticker(&mut self, sticker: Sticker) {
         self.sticker.insert(self.count_sticker, sticker);
         self.count_sticker += 1;
-    }
-
-    pub fn set_account_state(&mut self, account: u64, state: AccountState) {
-        if let Some(account) = self.account.get_mut(&account) {
-            account.state = state;
-        }
-    }
-
-    pub fn set_account_write(&mut self, account: u64, write: bool) {
-        if let Some(account) = self.account.get_mut(&account) {
-            account.write = write;
-        }
     }
 }
 
@@ -75,12 +112,18 @@ impl Default for Server {
                 count_account: Default::default(),
                 count_channel: Default::default(),
                 count_sticker: Default::default(),
+                account_key: Default::default(),
                 account: Default::default(),
                 channel: Default::default(),
                 sticker: Default::default(),
+                name: Self::DEFAULT_NAME.to_string(),
+                info: Self::DEFAULT_INFO.to_string(),
+                icon: None,
             };
 
-            this.push_channel(Channel::default());
+            this.push_channel(Channel::new("foo"));
+            this.push_channel(Channel::new("bar"));
+            this.push_channel(Channel::new("baz"));
 
             this
         }
@@ -89,15 +132,10 @@ impl Default for Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        //std::fs::write(
-        //    Self::PATH_FILE,
-        //    bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap(),
-        //)
-        //.unwrap();
+        std::fs::write(
+            Self::PATH_FILE,
+            bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap(),
+        )
+        .unwrap();
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Sticker {
-    pub data: Vec<u8>,
 }

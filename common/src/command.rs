@@ -6,18 +6,28 @@ use tokio::net::TcpStream;
 //================================================================
 
 use crate::account::*;
+use crate::channel::*;
 use crate::message::*;
 use crate::server::*;
 
 //================================================================
 
+pub type Signature = Vec<u8>;
+
 /// A command the client can send to the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CommandClient {
-    Enter(Account),
+    Enter(AccountConnect),
     Leave,
-    // Challenge(u128),
-    Message(MessageKind),
+    Nonce(Signature),
+
+    Message(ChannelID, MessageKind),
+    MessageReact(ChannelID, MessageID),
+    MessageStar(ChannelID, MessageID),
+    MessageEdit(ChannelID, MessageID, Message),
+    MessageDelete(ChannelID, MessageID),
+
+    AccountChannel(ChannelID),
     AccountState(AccountState),
     AccountWrite(bool),
 }
@@ -52,16 +62,23 @@ impl CommandClient {
 
 //================================================================
 
+pub type Challenge = Vec<u8>;
+
 /// A command the server can send to the client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CommandServer {
     Error(Error),
-    Enter(Server),
+
+    Enter(AccountID, Server),
     Leave,
-    // Challenge(u128),
+    Nonce(Challenge),
+
     Message(Message),
-    AccountState(u64, AccountState),
-    AccountWrite(u64, bool),
+    MessageDelete(ChannelID, MessageID),
+
+    AccountChannel(AccountID, ChannelID),
+    AccountState(AccountID, AccountState),
+    AccountWrite(AccountID, bool),
 }
 
 impl CommandServer {

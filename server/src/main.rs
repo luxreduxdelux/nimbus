@@ -1,3 +1,7 @@
+use ed25519_dalek::Signature;
+use ed25519_dalek::VerifyingKey;
+use rand::RngCore;
+use rand::rngs::OsRng;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
@@ -62,16 +66,14 @@ impl Connection {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let listen = TcpListener::bind("127.0.0.1:8080").await?;
+    let listen = TcpListener::bind("0.0.0.0:8080").await?;
     let app = Arc::new(Mutex::new(App::default()));
     let app_c = app.clone();
     let (a_tx, mut a_rx) = channel::<(u64, CommandClient)>(256);
 
-    let command = tokio::spawn(async move {
+    tokio::spawn(async move {
         while let Some((index, command)) = a_rx.recv().await {
             println!("[SERVER::Loop] {command:#?}");
-
-            let account = app_c.lock().await.server.account[&index].clone();
 
             match &command {
                 CommandClient::Leave => {
@@ -86,14 +88,24 @@ async fn main() -> anyhow::Result<()> {
                     app.send_all(CommandServer::AccountWrite(index, false))
                         .await;
                 }
-                CommandClient::Message(message) => {
-                    let message = Message {
-                        from: account.name,
-                        kind: message.clone(),
-                    };
+                CommandClient::Message(channel, message) => {
+                    let message = Message::new(*channel, index, message.clone(), None);
                     let mut app = app_c.lock().await;
-                    app.server.push_message(0, message.clone());
+                    // TO-DO check if channel ID is valid
+                    app.server.push_message(*channel, message.clone());
                     app.send_all(CommandServer::Message(message)).await;
+                }
+                CommandClient::MessageDelete(channel, message) => {
+                    let mut app = app_c.lock().await;
+                    app.server.delete_message(*channel, *message);
+                    app.send_all(CommandServer::MessageDelete(*channel, *message))
+                        .await;
+                }
+                CommandClient::AccountChannel(channel) => {
+                    let mut app = app_c.lock().await;
+                    app.server.set_account_channel(index, *channel);
+                    app.send_all(CommandServer::AccountChannel(index, *channel))
+                        .await;
                 }
                 CommandClient::AccountState(state) => {
                     let mut app = app_c.lock().await;
@@ -128,55 +140,87 @@ async fn main() -> anyhow::Result<()> {
                 println!("[SERVER] Connect: {socket:#?}");
 
                 tokio::spawn(async move {
+                    let mut key_challenge = None;
+
                     loop {
                         let command = CommandClient::read(&mut socket).await;
 
                         println!("[SERVER] {command:#?}");
 
-                        if let Ok(command) = command {
-                            if let CommandClient::Enter(account) = command {
-                                let mut lock = app.lock().await;
-                                let find = lock.server.account.iter().position(|x| x.1.name == account.name);
-                                let index = match find {
-                                    Some(i) => {
-                                        i as u64
-                                    },
-                                    None => {
-                                        lock.server.push_account(account.clone());
-                                        lock.server.count_account - 1
+                        if let Ok(command) = &command {
+                            match command {
+                                CommandClient::Enter(account_connect) => {
+                                    if !account_connect.is_valid() {
+                                        println!("invalid account connect");
+                                        CommandServer::Error(Error::Account)
+                                            .write(&mut socket)
+                                            .await;
+                                        break;
                                     }
-                                };
 
-                                lock.client.insert(index, (account.clone(), tx));
+                                    let mut app = app.lock().await;
 
-                                // TO-DO send to EVERY other client that this client is now online
-                                CommandServer::Enter(lock.server.clone())
-                                    .write(&mut socket)
-                                    .await;
+                                    if app.server.account_key.contains_key(&account_connect.key) {
+                                        let mut challenge = [0; 32];
+                                        OsRng.fill_bytes(&mut challenge);
 
-                                Connection::new(socket, a_tx, rx, index).await;
+                                        key_challenge = Some((account_connect.key, challenge));
 
-                                break;
+                                        CommandServer::Nonce(challenge.to_vec())
+                                            .write(&mut socket)
+                                            .await;
+                                    } else {
+                                        let account_i = app.server.count_account;
+                                        let account_c = account_connect.clone().into_account(account_i);
+                                        app.server.account_key.insert(account_c.key, account_i);
+                                        app.server.push_account(account_c.clone());
+
+                                        // TO-DO do I need to store account_c?
+                                        app.client.insert(account_i, (account_c, tx));
+
+                                        // TO-DO send to EVERY other client that this client is now online
+                                        CommandServer::Enter(account_i, app.server.clone())
+                                            .write(&mut socket)
+                                            .await;
+
+                                        Connection::new(socket, a_tx, rx, account_i).await;
+                                        break;
+                                    }
+                                },
+                                CommandClient::Nonce(signature) => {
+                                    let mut app = app.lock().await;
+
+                                    if let Some((key, challenge)) = key_challenge {
+                                        let v_key = VerifyingKey::from_bytes(&key).unwrap();
+                                        let v_sig = Signature::from_bytes(signature.as_slice().try_into().unwrap());
+
+                                        if v_key.verify_strict(&challenge, &v_sig).is_ok() {
+                                            if let Some(account_i) = app.server.account_key.get(&key) {
+                                                let account_i = *account_i;
+                                                let account_c = app.server.account[&account_i].clone();
+
+                                                // TO-DO do I need to store account_c?
+                                                app.client.insert(account_i, (account_c, tx));
+
+                                                // TO-DO send to EVERY other client that this client is now online
+                                                CommandServer::Enter(account_i, app.server.clone())
+                                                    .write(&mut socket)
+                                                    .await;
+
+                                                Connection::new(socket, a_tx, rx, account_i).await;
+                                                break;
+                                            }
+                                            else {
+                                                CommandServer::Error(Error::Connect)
+                                                    .write(&mut socket)
+                                                    .await;
+                                            }
+                                        }
+                                    }
+                                },
+                                _ => {}
                             }
                         }
-
-                        /*
-                        let n = match socket.read(&mut buf).await {
-                            // socket closed
-                            Ok(0) => return,
-                            Ok(n) => n,
-                            Err(e) => {
-                                eprintln!("failed to read from socket; err = {:?}", e);
-                                return;
-                            }
-                        };
-
-                        // Write the data back
-                        if let Err(e) = socket.write_all(&buf[0..n]).await {
-                            eprintln!("failed to write to socket; err = {:?}", e);
-                            return;
-                        }
-                        */
                     }
                 });
             }

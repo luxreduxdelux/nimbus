@@ -2,31 +2,42 @@ use serde::{Deserialize, Serialize};
 
 //================================================================
 
+use crate::account::*;
+use crate::channel::*;
+use crate::server::*;
+
+//================================================================
+
+pub type MessageID = u64;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
-    pub from: String,
+    pub channel: ChannelID,
+    pub account: AccountID,
+    pub star: bool,
     pub kind: MessageKind,
+    pub reply: Option<AccountID>,
+    pub react: Vec<(AccountID, char)>,
 }
 
-impl Message {
-    pub fn text(from: String, text: String) -> Self {
-        Self {
-            from,
-            kind: MessageKind::Text(text),
-        }
+impl<'a> Message {
+    pub fn account(&'a self, server: &'a Server) -> &'a Account {
+        &server.account[&self.account]
     }
 
-    pub fn file(from: String, name: String, data: Vec<u8>) -> Self {
+    pub fn new(
+        channel: ChannelID,
+        account: AccountID,
+        kind: MessageKind,
+        reply: Option<AccountID>,
+    ) -> Self {
         Self {
-            from,
-            kind: MessageKind::File(name, data),
-        }
-    }
-
-    pub fn sticker(from: String, sticker: u64) -> Self {
-        Self {
-            from,
-            kind: MessageKind::Sticker(sticker),
+            channel,
+            account,
+            star: Default::default(),
+            kind,
+            reply,
+            react: Default::default(),
         }
     }
 }

@@ -4,12 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eframe      = { version = "0.34.3" }
-egui_extras = { version = "0.34.3", features = ["all_loaders"] }
-tokio       = { version = "1.0",    features = ["full"]        }
-serde       = { version = "1.0",    features = ["derive"]      }
-bincode     = { version = "2.0",    features = ["serde"]       }
-image       = { version = "0.24.0" }
-rfd         = { version = "0.17.2" }
-anyhow      = { version = "1.0"    }
-client      = { path = "../client" }
+tokio         = { version = "1.0",    features = ["full"]        }
+serde         = { version = "1.0",    features = ["derive"]      }
+bincode       = { version = "2.0",    features = ["serde"]       }
+ed25519-dalek = { version = "2.2.0",  features = ["rand_core"]   }
+rand          = { version = "0.8"    }
+eframe        = { version = "0.34.3" }
+egui_extras   = { version = "0.34.3", features = ["all_loaders"] }
+image         = { version = "0.24.0" }
+rfd           = { version = "0.17.2" }
+anyhow        = { version = "1.0"    }
+client        = { path = "../client" }
