@@ -1,3 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["client", "client-desktop", "server", "common"]
+members = [
+    "source/client",
+    "source/client-desktop",
+    "source/server",
+    "source/common"
+]
