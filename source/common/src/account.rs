@@ -15,9 +15,11 @@ pub struct Account {
     pub name_nick: String,
     pub name_user: String,
     pub info: String,
-    pub icon: Option<Vec<u8>>,
+    pub icon_main: Option<Vec<u8>>,
+    pub icon_side: Option<Vec<u8>>,
     pub index: AccountID,
     pub channel: ChannelID,
+    pub activity: Option<AccountActivity>,
     pub state: AccountState,
     pub write: bool,
 }
@@ -31,13 +33,22 @@ pub enum AccountState {
     Offline,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AccountActivity {
+    App(String),
+    Game(String),
+    Video(String),
+    Audio(String),
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct AccountConnect {
     pub key: AccountKey,
     pub name_nick: String,
     pub name_user: String,
     pub info: String,
-    pub icon: Option<Vec<u8>>,
+    pub icon_main: Option<Vec<u8>>,
+    pub icon_side: Option<Vec<u8>>,
 }
 
 pub enum NickError {
@@ -66,7 +77,7 @@ impl AccountConnect {
         Self::is_valid_nick(&self.name_nick).is_ok()
             && Self::is_valid_user(&self.name_user).is_ok()
             && Self::is_valid_info(&self.info).is_ok()
-            && Self::is_valid_icon(&self.icon).is_ok()
+            && Self::is_valid_icon(&self.icon_main).is_ok()
     }
 
     pub fn is_valid_nick(name: &str) -> Result<(), NickError> {
@@ -122,9 +133,11 @@ impl AccountConnect {
             name_nick: self.name_nick,
             name_user: self.name_user,
             info: self.info,
-            icon: self.icon,
+            icon_main: self.icon_main,
+            icon_side: self.icon_side,
             index,
             channel: Default::default(),
+            activity: Default::default(),
             state: Default::default(),
             write: Default::default(),
         }

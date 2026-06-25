@@ -1,0 +1,21 @@
+{
+	"folders":
+	[
+        {
+            "path": "source/",
+        }
+	],
+    "build_systems":
+    [
+        {
+            "name": "Run (Client & Server)",
+            "working_dir": "$project_path",
+            "cmd": ["bash", "bash/run.sh"]
+        },
+        {
+            "name": "Run (Client)",
+            "working_dir": "$project_path",
+            "cmd": ["bash", "bash/run_client.sh"]
+        }
+    ]
+}

@@ -1,4 +1,5 @@
 mod app;
+mod system;
 mod user;
 
 //================================================================
@@ -19,7 +20,7 @@ async fn main() -> eframe::Result {
         option,
         Box::new(|context| {
             egui_extras::install_image_loaders(&context.egui_ctx);
-            Ok(Box::new(App::default()))
+            Ok(Box::new(App::new(&context.egui_ctx)))
         }),
     )
 }

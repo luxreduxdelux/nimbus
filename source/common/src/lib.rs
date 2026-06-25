@@ -1,6 +1,8 @@
 pub mod account;
+pub mod category;
 pub mod channel;
 pub mod command;
+pub mod identifier;
 pub mod message;
 pub mod prelude;
 pub mod server;

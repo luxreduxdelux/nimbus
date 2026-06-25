@@ -14,10 +14,55 @@ use common::prelude::*;
 
 //================================================================
 
-#[derive(Default)]
 struct App {
-    server: Server,
     client: HashMap<u64, (Account, tokio::sync::mpsc::Sender<CommandServer>)>,
+    server: Server,
+    file: String,
+    port: u32,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        let mut file = "server.data".to_string();
+        let mut port = 8080;
+        let mut list = std::env::args();
+        list.next();
+
+        while let Some(argument) = list.next() {
+            match argument.as_str() {
+                "--file" => {
+                    if let Some(argument) = list.next() {
+                        file = argument;
+                    } else {
+                        println!("missing argument \"{{file}}\" for command \"--file\".");
+                    }
+                }
+                "--port" => {
+                    if let Some(argument) = list.next() {
+                        if let Ok(argument) = argument.parse() {
+                            port = argument;
+                        } else {
+                            println!(
+                                "invalid numerical argument \"{argument}\" for command \"--port\"."
+                            );
+                        }
+                    } else {
+                        println!("missing argument \"{{port}}\" for command \"--port\".");
+                    }
+                }
+                x => {
+                    println!("unknown argument \"{x}\".");
+                }
+            }
+        }
+
+        Self {
+            client: Default::default(),
+            server: Server::load(&file),
+            file,
+            port,
+        }
+    }
 }
 
 impl App {
@@ -67,9 +112,17 @@ impl Connection {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let listen = TcpListener::bind("0.0.0.0:8080").await?;
+    let (a_tx, mut a_rx) = channel::<(u64, CommandClient)>(256);
     let app = Arc::new(Mutex::new(App::default()));
     let app_c = app.clone();
-    let (a_tx, mut a_rx) = channel::<(u64, CommandClient)>(256);
+
+    /*
+    println!(
+        "Nimbus server up and running on port {}, on file \"{}\".",
+        app_c.lock().await.port,
+        app_c.lock().await.file
+    );
+    */
 
     tokio::spawn(async move {
         while let Some((index, command)) = a_rx.recv().await {
@@ -147,7 +200,7 @@ async fn main() -> anyhow::Result<()> {
 
                         println!("[SERVER] {command:#?}");
 
-                        if let Ok(command) = &command {
+                        if let Ok(command) = command {
                             match command {
                                 CommandClient::Enter(account_connect) => {
                                     if !account_connect.is_valid() {
@@ -164,12 +217,13 @@ async fn main() -> anyhow::Result<()> {
                                         let mut challenge = [0; 32];
                                         OsRng.fill_bytes(&mut challenge);
 
-                                        key_challenge = Some((account_connect.key, challenge));
+                                        key_challenge = Some((account_connect, challenge));
 
                                         CommandServer::Nonce(challenge.to_vec())
                                             .write(&mut socket)
                                             .await;
                                     } else {
+                                        // TO-DO always do nonce challenge, irrespective of whether this account key has already been in the server before
                                         let account_i = app.server.count_account;
                                         let account_c = account_connect.clone().into_account(account_i);
                                         app.server.account_key.insert(account_c.key, account_i);
@@ -190,14 +244,14 @@ async fn main() -> anyhow::Result<()> {
                                 CommandClient::Nonce(signature) => {
                                     let mut app = app.lock().await;
 
-                                    if let Some((key, challenge)) = key_challenge {
-                                        let v_key = VerifyingKey::from_bytes(&key).unwrap();
+                                    if let Some((ref account_connect, challenge)) = key_challenge {
+                                        let v_key = VerifyingKey::from_bytes(&account_connect.key).unwrap();
                                         let v_sig = Signature::from_bytes(signature.as_slice().try_into().unwrap());
 
                                         if v_key.verify_strict(&challenge, &v_sig).is_ok() {
-                                            if let Some(account_i) = app.server.account_key.get(&key) {
-                                                let account_i = *account_i;
-                                                let account_c = app.server.account[&account_i].clone();
+                                            if let Some(account_i) = app.server.account_key.get(&account_connect.key).cloned() {
+                                                let account_c = account_connect.clone().into_account(account_i);
+                                                app.server.account.insert(account_i, account_c.clone());
 
                                                 // TO-DO do I need to store account_c?
                                                 app.client.insert(account_i, (account_c, tx));

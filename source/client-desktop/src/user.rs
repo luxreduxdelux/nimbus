@@ -1,6 +1,8 @@
-use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
+use egui::TextureHandle;
+use resvg::render;
+use resvg::usvg::{Options, Tree};
 use serde::{Deserialize, Serialize};
+use tiny_skia::Pixmap;
 
 //================================================================
 
@@ -14,31 +16,51 @@ pub struct User {
     pub name_nick: String,
     pub name_user: String,
     pub info: String,
-    pub icon: Option<Vec<u8>>,
+    pub icon_main: Option<Vec<u8>>,
+    pub icon_side: Option<Vec<u8>>,
+    pub theme: egui::Visuals,
+    pub zoom: f32,
     pub address: String,
+}
+
+impl User {
+    const PATH_FILE: &str = "user.data";
+
+    pub fn generate_image_identifier(&self, ui: &egui::Context) -> TextureHandle {
+        let code = serde_json::to_string(&self.identifier).unwrap();
+        let code = qrcode::QrCode::new(code).unwrap();
+        let icon = code
+            .render::<qrcode::render::svg::Color>()
+            .max_dimensions(256, 256)
+            .build();
+
+        let tree = Tree::from_str(&icon, &Options::default()).unwrap();
+        let mut map = Pixmap::new(256, 256).unwrap();
+
+        render(&tree, tiny_skia::Transform::default(), &mut map.as_mut());
+
+        let icon = map.data().to_vec();
+        let icon = egui::ColorImage::from_rgba_unmultiplied([256, 256], &icon);
+
+        ui.load_texture(
+            "identifier_image",
+            icon,
+            eframe::egui::TextureOptions::default(),
+        )
+    }
 }
 
 impl Into<AccountConnect> for User {
     fn into(self) -> AccountConnect {
-        let icon = if let Some(icon) = &self.icon {
-            // TO-DO
-            None
-        } else {
-            None
-        };
-
         AccountConnect {
             key: self.identifier.public_key(),
             name_nick: self.name_nick.clone(),
             name_user: self.name_user.clone(),
             info: self.info.clone(),
-            icon,
+            icon_main: self.icon_main.clone(),
+            icon_side: self.icon_side.clone(),
         }
     }
-}
-
-impl User {
-    const PATH_FILE: &str = "user.data";
 }
 
 impl Default for User {
@@ -54,7 +76,10 @@ impl Default for User {
                 name_nick: Default::default(),
                 name_user: Default::default(),
                 info: Default::default(),
-                icon: Default::default(),
+                icon_main: Default::default(),
+                icon_side: Default::default(),
+                theme: Default::default(),
+                zoom: 1.0,
                 address: "127.0.0.1".to_string(),
             }
         }
@@ -62,44 +87,6 @@ impl Default for User {
 }
 
 impl Drop for User {
-    fn drop(&mut self) {
-        std::fs::write(
-            Self::PATH_FILE,
-            bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap(),
-        )
-        .unwrap();
-    }
-}
-
-//================================================================
-
-///The signing key (otherwise known as "private key").
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Identifier(pub AccountKey);
-
-impl Identifier {
-    const PATH_FILE: &str = "key.nimbus";
-
-    pub fn public_key(&self) -> AccountKey {
-        let key = SigningKey::from(self.0);
-        key.verifying_key().to_bytes()
-    }
-}
-
-impl Default for Identifier {
-    fn default() -> Self {
-        if let Ok(data) = std::fs::read(Self::PATH_FILE)
-            && let Ok((identifier, _)) =
-                bincode::serde::decode_from_slice(&data, bincode::config::standard())
-        {
-            identifier
-        } else {
-            Self(SigningKey::generate(&mut OsRng).to_bytes())
-        }
-    }
-}
-
-impl Drop for Identifier {
     fn drop(&mut self) {
         std::fs::write(
             Self::PATH_FILE,

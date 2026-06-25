@@ -1,48 +1,89 @@
+use chrono::{DateTime, Local, Utc};
 use eframe::egui::{
     self, Color32, ColorImage, FontId, ImageSource, Response, RichText, Spinner, TextureHandle,
     Vec2,
 };
+use egui_modal::Modal;
 use std::collections::HashMap;
 
 //================================================================
 
+use crate::system::*;
 use crate::user::*;
 use client::common::prelude::*;
 use client::*;
 
 //================================================================
 
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
+enum Setup {
+    #[default]
+    Account,
+    Window,
+    Notify,
+    Input,
+}
+
 pub struct App {
-    user: User,
+    system: System,
     client: Option<Client>,
+    user: User,
     index_channel: ChannelID,
-    index_message: Option<u64>,
+    setup: Setup,
     entry: String,
     image: HashMap<u64, TextureHandle>,
+    image_icon_main: Option<TextureHandle>,
+    image_icon_side: Option<TextureHandle>,
+    image_identifier: TextureHandle,
+    show_setup: bool,
+    show_poll: bool,
 }
 
 impl App {
-    fn load_image(
-        cache: &mut HashMap<u64, TextureHandle>,
-        index: u64,
-        data: &[u8],
-        ui: &eframe::egui::Ui,
-    ) -> anyhow::Result<()> {
+    pub fn new(ui: &egui::Context) -> Self {
+        let user = User::default();
+        let image_icon_main = if let Some(icon) = &user.icon_main {
+            Some(Self::load_image("icon_main", icon, ui).unwrap())
+        } else {
+            None
+        };
+        let image_icon_side = if let Some(icon) = &user.icon_side {
+            Some(Self::load_image("icon_side", icon, ui).unwrap())
+        } else {
+            None
+        };
+        let image_identifier = user.generate_image_identifier(ui);
+
+        ui.set_visuals(user.theme.clone());
+        ui.set_zoom_factor(user.zoom);
+
+        Self {
+            system: System::new(&user),
+            client: None,
+            user,
+            index_channel: 0,
+            setup: Default::default(),
+            entry: Default::default(),
+            image: Default::default(),
+            image_icon_main,
+            image_icon_side,
+            image_identifier,
+            show_setup: Default::default(),
+            show_poll: Default::default(),
+        }
+    }
+
+    fn load_image(index: &str, data: &[u8], ui: &egui::Context) -> anyhow::Result<TextureHandle> {
         let image = image::load_from_memory(data)?.to_rgba8();
         let color_image = ColorImage::from_rgba_unmultiplied(
             [image.width() as usize, image.height() as usize],
             image.as_raw(),
         );
-        let texture = ui.ctx().load_texture(
+        Ok(ui.load_texture(
             index.to_string(),
             color_image,
             eframe::egui::TextureOptions::default(),
-        );
-
-        cache.insert(index, texture);
-
-        Ok(())
+        ))
     }
 
     fn draw(&mut self, ui: &mut egui::Ui) {
@@ -54,10 +95,10 @@ impl App {
         if let Some(client) = &mut self.client {
             client.update(|command| match command {
                 CommandServer::Enter(_, server) => {
-                    for (index, sticker) in &server.sticker {
-                        println!("[CLIENT] Load image: {index}");
-                        Self::load_image(&mut self.image, *index, &sticker.data, ui);
-                    }
+                    //for (index, sticker) in &server.sticker {
+                    //    println!("[CLIENT] Load image: {index}");
+                    //    Self::load_image(&mut self.image, *index, &sticker.data, ui);
+                    //}
                 }
                 _ => {}
             });
@@ -75,29 +116,240 @@ impl App {
     }
 
     fn draw_setup(&mut self, ui: &mut egui::Ui) {
+        /*
+        Account
+            key
+            nick
+            name
+            info
+            icon
+        Notify
+            sound
+            push
+            tray
+        Window
+            zoom
+            tray
+            theme
+        Input
+            voice
+            hot-key
+        */
         egui::Panel::top("top").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.button("<-");
-                ui.label(RichText::new("Setup").strong());
+                Self::button_image(
+                    ui,
+                    egui::include_image!("../asset/back.svg"),
+                    Vec2::new(24.0, 24.0),
+                );
+
+                ui.selectable_value(&mut self.setup, Setup::Account, "Account");
+                ui.selectable_value(&mut self.setup, Setup::Window, "Window");
+                ui.selectable_value(&mut self.setup, Setup::Notify, "Notify");
+                ui.selectable_value(&mut self.setup, Setup::Input, "Input");
             });
-        });
-        egui::Panel::left("left").show_inside(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.selectable_value(&mut 1, 1, "1");
-                });
         });
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.label("Nick Name");
-            ui.text_edit_singleline(&mut self.user.name_nick);
+            egui::ScrollArea::vertical().show(ui, |ui| match &self.setup {
+                Setup::Account => {
+                    ui.horizontal(|ui| {
+                        ui.heading("Identifier");
 
-            ui.label("User Name");
-            ui.text_edit_singleline(&mut self.user.name_user);
+                        let modal = Modal::new(ui, "identifier_help");
 
-            ui.label("User Info");
-            ui.text_edit_multiline(&mut self.user.info);
+                        modal.show(|ui| {
+                            modal.title(ui, "Identifier Help");
+                            modal.frame(ui, |ui| {
+                                ui.label("An identifier can uniquely identify you across any Nimbus community. When connecting to a Nimbus server for the first time, it will register you using your identifier.\n
+                                    If you or another person using your identifier connect again to that community, they must prove ownership to your identifier.\n
+                                    For that reason, you must NOT share your identifier with anyone else.");
+                            });
+                            modal.buttons(ui, |ui| {
+                                modal.button(ui, "Close");
+                            });
+                        });
+
+                        if ui.button("?").clicked() {
+                            modal.open();
+                        }
+                    });
+
+                    ui.separator();
+
+                    let date =
+                        DateTime::<Utc>::from_timestamp(self.user.identifier.date, 0).unwrap();
+                    let date = date.with_timezone(&Local);
+
+                    ui.label("Identifier Name");
+                    ui.text_edit_singleline(&mut self.user.identifier.name);
+
+                    ui.label("Identifier Date");
+                    ui.label(RichText::new(date.to_string()).strong());
+
+                    //================
+
+                    let modal = Modal::new(ui, "identifier_image");
+
+                    modal.show(|ui| {
+                        modal.title(ui, "Identifier");
+                        modal.frame(ui, |ui| {
+                            ui.image(&self.image_identifier);
+                        });
+                        modal.buttons(ui, |ui| {
+                            modal.button(ui, "Close");
+                        });
+                    });
+
+                    if ui.button("Show Identifier QR Code").clicked() {
+                        modal.open();
+                    }
+
+                    //================
+
+                    let modal = Modal::new(ui, "identifier_create");
+
+                    modal.show(|ui| {
+                        modal.title(ui, "Create Identifier");
+                        modal.frame(ui, |ui| {
+                            ui.label("WARNING! This will discard the current identifier. Make sure to export your identifier before continuing.")
+                        });
+                        modal.buttons(ui, |ui| {
+                            if modal.button(ui, "Create").clicked() {
+                                self.user.identifier  = Identifier::default();
+                                self.image_identifier = self.user.generate_image_identifier(ui.ctx());
+                            }
+                            modal.button(ui, "Cancel");
+                        });
+                    });
+
+                    if ui.button("Create Identifier").clicked() {
+                        modal.open();
+                    }
+
+                    //================
+
+                    let modal = Modal::new(ui, "identifier_import");
+
+                    modal.show(|ui| {
+                        modal.title(ui, "Import Identifier");
+                        modal.frame(ui, |ui| {
+                            ui.label("WARNING! This will discard the current identifier. Make sure to export your identifier before continuing.")
+                        });
+                        modal.buttons(ui, |ui| {
+                            if modal.button(ui, "Import").clicked() {
+                                self.user.identifier  = Identifier::default();
+                                self.image_identifier = self.user.generate_image_identifier(ui.ctx());
+                            }
+                            modal.button(ui, "Cancel");
+                        });
+                    });
+
+                    if ui.button("Import Identifier").clicked() {
+                        modal.open();
+                    }
+
+                    //================
+
+                    ui.button("Export Identifier");
+
+
+                    ui.heading("Persona");
+                    ui.separator();
+
+
+                    ui.label("User Icon (Main/Side)");
+                    ui.horizontal(|ui| {
+                        if let Some(icon) = &self.image_icon_main {
+                            ui.add(
+                                egui::Image::new(icon)
+                                    .fit_to_exact_size(Vec2::new(64.0, 64.0)),
+                            );
+                        } else {
+                            ui.add(
+                                egui::Image::new(egui::include_image!("../asset/user.svg"))
+                                    .fit_to_exact_size(Vec2::new(64.0, 64.0)),
+                            );
+                        };
+
+                        if let Some(icon) = &self.image_icon_side {
+                            ui.add(
+                                egui::Image::new(icon)
+                                    .fit_to_exact_size(Vec2::new(256.0, 64.0)),
+                            );
+                        } else {
+                            ui.add(
+                                egui::Image::new(egui::include_image!("../asset/user.svg"))
+                                    .fit_to_exact_size(Vec2::new(256.0, 64.0)),
+                            );
+                        };
+                    });
+
+                    if ui.button("Set Main User Icon").clicked() && let Some(file) = rfd::FileDialog::new().pick_file() {
+                        self.user.icon_main = Some(std::fs::read(file).unwrap());
+                    }
+                    if ui.button("Set Side User Icon").clicked() && let Some(file) = rfd::FileDialog::new().pick_file() {
+                        self.user.icon_side = Some(std::fs::read(file).unwrap());
+                    }
+
+                    ui.label("Nick Name");
+                    ui.text_edit_singleline(&mut self.user.name_nick);
+
+                    ui.label("User Name");
+                    ui.text_edit_singleline(&mut self.user.name_user);
+
+                    ui.label("User Info");
+                    ui.text_edit_multiline(&mut self.user.info);
+
+                    ui.heading("Privacy");
+                    ui.separator();
+
+                    ui.checkbox(&mut true, "Send Type Indicator");
+                    ui.checkbox(&mut true, "Send Read Indicator");
+                    ui.checkbox(&mut true, "Send Rich Presence");
+
+                    // block list, automatic message deletion, delete all if away for X time
+                }
+                Setup::Window => {
+                    ui.label("Zoom Scale");
+
+                    let response = ui.add(egui::Slider::new(&mut self.user.zoom, 0.5..=2.0));
+
+                    if response.drag_stopped() || (!response.dragged() && response.changed()) {
+                        ui.set_zoom_factor(self.user.zoom);
+                    }
+
+                    ui.checkbox(&mut false, "Show Tray Icon");
+
+                    ui.heading("Theme");
+                    ui.separator();
+
+                    if ui.button("Import Theme").clicked() {
+                        ui.copy_text(serde_json::to_string_pretty(ui.visuals()).unwrap());
+                    };
+                    if ui.button("Export Theme").clicked() {
+                        ui.ctx()
+                            .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                    };
+                }
+                Setup::Notify => {
+                    ui.checkbox(&mut true, "Play Sound");
+                    ui.checkbox(&mut true, "Push Notification");
+                    ui.checkbox(&mut true, "Icon Notification");
+                }
+                Setup::Input => {
+                    ui.label("Voice Input");
+                    ui.label("Voice Check");
+                    ui.label("Double-Click Message Action");
+                    ui.label("Channel Navigation (Upper)");
+                    ui.label("Channel Navigation (Lower)");
+                    ui.label("Edit Message (On Hover)");
+                    ui.label("Star Message (On Hover)");
+                    ui.label("React Message (On Hover)");
+                    ui.label("Edit Last Message");
+                    ui.label("Toggle Navigator");
+                }
+            });
         });
     }
 
@@ -186,11 +438,11 @@ impl App {
                 let valid_info = AccountConnect::is_valid_info(&self.user.info);
                 let valid = valid_nick.is_ok() && valid_user.is_ok() && valid_info.is_ok();
 
-                ui.add_enabled_ui(true, |ui| {
+                ui.add_enabled_ui(valid, |ui| {
                     if ui.button("Log In").clicked() {
                         self.client = Some(Client::new(
                             self.user.address.to_string(),
-                            self.user.identifier.0,
+                            self.user.identifier.key,
                             self.user.clone().into(),
                         ));
                     }
@@ -251,30 +503,39 @@ impl App {
         });
     }
 
+    fn pop_up<F: FnOnce(&mut egui::Ui)>(
+        identifier: &str,
+        response: egui::Response,
+        ui: &mut egui::Ui,
+        content: F,
+    ) {
+        let identifier = ui.make_persistent_id(identifier);
+
+        if response.clicked() {
+            egui::Popup::open_id(ui.ctx(), identifier);
+        }
+
+        #[rustfmt::skip]
+        egui::Popup::from_toggle_button_response(&response).show(content);
+    }
+
     fn draw_account(ui: &mut egui::Ui, client: Option<&mut Client>, account: &Account) {
         ui.horizontal(|ui| {
             if let Some(client) = &client {
-                let id = ui.make_persistent_id("status");
-
                 let response = Self::button_image(
                     ui,
                     ImageSource::Uri("file:///home/lux/Desktop/deer.png".to_string().into()),
                     Vec2::new(32.0, 32.0),
                 );
 
-                if response.clicked() {
-                    egui::Popup::open_id(ui.ctx(), id);
-                }
-
-                #[rustfmt::skip]
-                egui::Popup::from_toggle_button_response(&response).show(|ui| {
+                Self::pop_up("status", response, ui, |ui| {
                     let mut state = client.server.account[&client.index].state.clone();
                     let mut click = false;
                     let state_list = [
                         (AccountState::Online, "Online"),
                         (AccountState::Away, "Away"),
                         (AccountState::Busy, "Busy"),
-                        (AccountState::Offline, "Offline")
+                        (AccountState::Offline, "Offline"),
                     ];
 
                     for (s, n) in state_list {
@@ -316,11 +577,13 @@ impl App {
             ui.label(RichText::new(&account.name_nick).strong());
 
             if client.is_some() {
-                Self::button_image(
+                if Self::button_image(
                     ui,
                     egui::include_image!("../asset/cog.svg"),
                     Vec2::new(32.0, 32.0),
-                );
+                )
+                .clicked()
+                {};
             }
         });
     }
@@ -373,25 +636,55 @@ impl App {
 
             ui.separator();
 
+            let mut seen = vec![];
+
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .max_height(ui.available_height() - 48.0)
-                .show_rows(ui, 8.0, client.server.channel.len(), |ui, range| {
-                    for i in range {
-                        if ui
-                            .selectable_value(
-                                &mut self.index_channel,
-                                i as u64,
-                                &format!("#{}", client.server.channel[&(i as u64)].name),
-                            )
-                            .clicked()
-                        {
-                            client.send(CommandClient::AccountChannel(i as ChannelID));
-                        };
+                .show(ui, |ui| {
+                    //
+                    for c in &client.server.category {
+                        for i in &c.list {
+                            if !seen.contains(i) {
+                                seen.push(*i);
+                            }
+                        }
+
+                        ui.collapsing(&c.name, |ui| {
+                            for i in &c.list {
+                                let channel = &client.server.channel[&i];
+
+                                if ui
+                                    .selectable_value(
+                                        &mut self.index_channel,
+                                        *i as u64,
+                                        &format!("#{}", channel.name),
+                                    )
+                                    .clicked()
+                                {
+                                    client.send(CommandClient::AccountChannel(*i as ChannelID));
+                                };
+                            }
+                        });
+                    }
+
+                    for (i, c) in &client.server.channel {
+                        if !seen.contains(i) {
+                            if ui
+                                .selectable_value(
+                                    &mut self.index_channel,
+                                    *i as u64,
+                                    &format!("#{}", c.name),
+                                )
+                                .clicked()
+                            {
+                                client.send(CommandClient::AccountChannel(*i as ChannelID));
+                            };
+
+                            seen.push(*i);
+                        }
                     }
                 });
-
-            //ui.button("New Channel");
 
             egui::Area::new("account".into())
                 .fixed_pos([ui.cursor().min.x, ui.viewport_rect().max.y - 48.0])
@@ -407,6 +700,7 @@ impl App {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    ui.add_space(6.0);
                     for (_, account) in &client.server.account {
                         Self::draw_account(ui, None, account);
                     }
@@ -539,30 +833,32 @@ impl App {
 
                     ui.separator();
 
+
                     ui.horizontal(|ui| {
-                        if Self::button_image(
+                        let add = Self::button_image(
                             ui,
-                            egui::include_image!("../asset/file.svg"),
+                            egui::include_image!("../asset/plus.svg"),
                             Vec2::new(32.0, 32.0),
-                        )
-                        .clicked()
-                        {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .set_title("Upload a file.")
-                                .pick_file()
-                                && let Ok(file) = std::fs::read(path.clone())
-                            {
-                                /*
-                                client.send_file(self.index_channel,
-                                    &path
-                                        .file_name()
-                                        .map(|x| x.display().to_string())
-                                        .unwrap_or("file".to_string()),
-                                    file,
-                                );
-                                */
-                            }
-                        };
+                        );
+
+                        //let id = ui.make_persistent_id("my_modal");
+
+                        Self::pop_up("plus", add, ui, |ui| {
+                            ui.button("Upload File");
+                            if ui.button("Submit Poll").clicked() {
+                                self.show_poll = true;
+                            };
+                        });
+
+                        if self.show_poll {
+                            egui::Modal::new("blah".into()).show(ui.ctx(), |ui| {
+                                ui.label("Hello");
+
+                                if ui.button("Close").clicked() {
+                                    self.show_poll = false;
+                                }
+                            });
+                        }
 
                         // TO-DO
                         let empty = self.entry.is_empty();

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 //================================================================
 
 use crate::account::*;
+use crate::category::*;
 use crate::channel::*;
 use crate::message::*;
 use crate::sticker::*;
@@ -22,6 +23,7 @@ pub struct Server {
     pub account: BTreeMap<AccountID, Account>,
     pub channel: BTreeMap<ChannelID, Channel>,
     pub sticker: BTreeMap<StickerID, Sticker>,
+    pub category: Vec<Category>,
     pub name: String,
     pub info: String,
     pub icon: Option<Vec<u8>>,
@@ -30,7 +32,6 @@ pub struct Server {
 impl Server {
     const DEFAULT_NAME: &str = "Nimbus Server";
     const DEFAULT_INFO: &str = "A default Nimbus server, for the people, by the people.\nhttps://github.com/luxreduxdelux/nimbus";
-    const PATH_FILE: &str = "server.data";
 
     //================================================================
 
@@ -79,6 +80,16 @@ impl Server {
 
     //================================================================
 
+    pub fn push_category(&mut self, category: Category) {
+        self.category.push(category);
+    }
+
+    pub fn delete_category(&mut self, index: usize) {
+        self.category.remove(index);
+    }
+
+    //================================================================
+
     pub fn push_message(&mut self, channel: ChannelID, message: Message) {
         if let Some(channel) = self.channel.get_mut(&channel) {
             channel.message.insert(channel.count_message, message);
@@ -98,44 +109,53 @@ impl Server {
         self.sticker.insert(self.count_sticker, sticker);
         self.count_sticker += 1;
     }
-}
 
-impl Default for Server {
-    fn default() -> Self {
-        if let Ok(data) = std::fs::read(Self::PATH_FILE)
+    //================================================================
+
+    pub fn load(path: &str) -> Self {
+        // TO-DO handle scenario where we could not deserialize but file does exist
+        if let Ok(data) = std::fs::read(path)
             && let Ok((user, _)) =
                 bincode::serde::decode_from_slice(&data, bincode::config::standard())
         {
             user
         } else {
-            let mut this = Self {
-                count_account: Default::default(),
-                count_channel: Default::default(),
-                count_sticker: Default::default(),
-                account_key: Default::default(),
-                account: Default::default(),
-                channel: Default::default(),
-                sticker: Default::default(),
-                name: Self::DEFAULT_NAME.to_string(),
-                info: Self::DEFAULT_INFO.to_string(),
-                icon: None,
-            };
-
-            this.push_channel(Channel::new("foo"));
-            this.push_channel(Channel::new("bar"));
-            this.push_channel(Channel::new("baz"));
-
-            this
+            Self::default()
         }
     }
-}
 
-impl Drop for Server {
-    fn drop(&mut self) {
+    pub fn save(&self, path: &str) {
         std::fs::write(
-            Self::PATH_FILE,
+            path,
             bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap(),
         )
         .unwrap();
+    }
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        let mut this = Self {
+            count_account: Default::default(),
+            count_channel: Default::default(),
+            count_sticker: Default::default(),
+            account_key: Default::default(),
+            account: Default::default(),
+            channel: Default::default(),
+            sticker: Default::default(),
+            category: Default::default(),
+            name: Self::DEFAULT_NAME.to_string(),
+            info: Self::DEFAULT_INFO.to_string(),
+            icon: None,
+        };
+
+        this.push_category(Category::new("General".to_string(), vec![0, 1, 2]));
+
+        this.push_channel(Channel::new("foo"));
+        this.push_channel(Channel::new("bar"));
+        this.push_channel(Channel::new("baz"));
+        this.push_channel(Channel::new("qux"));
+
+        this
     }
 }
