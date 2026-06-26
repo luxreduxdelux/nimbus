@@ -134,10 +134,14 @@ async fn main() -> anyhow::Result<()> {
                     app.client.remove(&index);
 
                     // TO-DO maybe should be CommandServer::AccountLeave?
-                    app.server.set_account_state(index, AccountState::Offline);
+                    app.server
+                        .set_account_state(index, AccountPresence::Offline);
                     app.server.set_account_write(index, false);
-                    app.send_all(CommandServer::AccountState(index, AccountState::Offline))
-                        .await;
+                    app.send_all(CommandServer::AccountPresence(
+                        index,
+                        AccountPresence::Offline,
+                    ))
+                    .await;
                     app.send_all(CommandServer::AccountWrite(index, false))
                         .await;
                 }
@@ -154,16 +158,22 @@ async fn main() -> anyhow::Result<()> {
                     app.send_all(CommandServer::MessageDelete(*channel, *message))
                         .await;
                 }
+                CommandClient::PollVote(channel, message, choice) => {
+                    let mut app = app_c.lock().await;
+                    app.server.poll_vote(index, *channel, *message, *choice);
+                    app.send_all(CommandServer::PollVote(index, *channel, *message, *choice))
+                        .await;
+                }
                 CommandClient::AccountChannel(channel) => {
                     let mut app = app_c.lock().await;
                     app.server.set_account_channel(index, *channel);
                     app.send_all(CommandServer::AccountChannel(index, *channel))
                         .await;
                 }
-                CommandClient::AccountState(state) => {
+                CommandClient::AccountPresence(state) => {
                     let mut app = app_c.lock().await;
                     app.server.set_account_state(index, state.clone());
-                    app.send_all(CommandServer::AccountState(index, state.clone()))
+                    app.send_all(CommandServer::AccountPresence(index, state.clone()))
                         .await;
                 }
                 CommandClient::AccountWrite(write) => {

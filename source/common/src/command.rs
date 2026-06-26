@@ -27,8 +27,12 @@ pub enum CommandClient {
     MessageEdit(ChannelID, MessageID, Message),
     MessageDelete(ChannelID, MessageID),
 
+    PollVote(ChannelID, MessageID, usize),
+
     AccountChannel(ChannelID),
-    AccountState(AccountState),
+    //AccountActivity(Option<AccountActivity>),
+    AccountPresence(AccountPresence),
+    AccountState(Option<String>),
     AccountWrite(bool),
 }
 
@@ -76,8 +80,12 @@ pub enum CommandServer {
     Message(Message),
     MessageDelete(ChannelID, MessageID),
 
+    PollVote(AccountID, ChannelID, MessageID, usize),
+
     AccountChannel(AccountID, ChannelID),
-    AccountState(AccountID, AccountState),
+    //AccountActivity(AccountID, Option<AccountActivity>),
+    AccountPresence(AccountID, AccountPresence),
+    AccountState(AccountID, Option<String>),
     AccountWrite(AccountID, bool),
 }
 

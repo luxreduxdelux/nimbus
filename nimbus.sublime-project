@@ -16,6 +16,11 @@
             "name": "Run (Client)",
             "working_dir": "$project_path",
             "cmd": ["bash", "bash/run_client.sh"]
+        },
+        {
+            "name": "Build & Package",
+            "working_dir": "$project_path",
+            "cmd": ["bash", "bash/build.sh"]
         }
     ]
 }

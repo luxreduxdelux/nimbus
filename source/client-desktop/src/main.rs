@@ -10,7 +10,10 @@ use crate::app::*;
 
 #[tokio::main]
 async fn main() -> eframe::Result {
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../asset/icon.png")).unwrap();
+
     let option = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_icon(std::sync::Arc::new(icon)),
         centered: true,
         ..Default::default()
     };

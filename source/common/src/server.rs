@@ -52,9 +52,9 @@ impl Server {
         }
     }
 
-    pub fn set_account_state(&mut self, account: AccountID, state: AccountState) {
+    pub fn set_account_state(&mut self, account: AccountID, state: AccountPresence) {
         if let Some(account) = self.account.get_mut(&account) {
-            account.state = state;
+            account.presence = state;
         }
     }
 
@@ -100,6 +100,28 @@ impl Server {
     pub fn delete_message(&mut self, channel: ChannelID, message: MessageID) {
         if let Some(channel) = self.channel.get_mut(&channel) {
             channel.message.remove(&message);
+        }
+    }
+
+    //================================================================
+
+    pub fn poll_vote(
+        &mut self,
+        account: AccountID,
+        channel: ChannelID,
+        message: MessageID,
+        choice: usize,
+    ) {
+        if let Some(channel) = self.channel.get_mut(&channel)
+            && let Some(message) = channel.message.get_mut(&message)
+            && let MessageKind::Poll(poll) = &mut message.kind
+            && let Some(choice) = poll.choice.get_mut(choice)
+        {
+            if choice.vote.contains(&account) {
+                choice.vote.remove(&account);
+            } else {
+                choice.vote.insert(account);
+            }
         }
     }
 

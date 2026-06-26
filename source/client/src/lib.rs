@@ -38,7 +38,7 @@ impl Client {
     /// Update the client state, polling for any new command from the server.
     pub fn update<F: FnMut(CommandServer)>(&mut self, mut call: F) -> anyhow::Result<()> {
         while let Ok(command) = self.thread.rx.try_recv() {
-            //println!("[CLIENT::Update] {command:?}");
+            println!("[CLIENT::Update] {command:?}");
 
             call(command.clone());
 
@@ -69,11 +69,17 @@ impl Client {
                 CommandServer::MessageDelete(channel, message) => {
                     self.server.delete_message(channel, message);
                 }
+                CommandServer::PollVote(account, channel, message, choice) => {
+                    self.server.poll_vote(account, channel, message, choice);
+                }
                 CommandServer::AccountChannel(index, channel) => {
                     self.server.set_account_channel(index, channel);
                 }
-                CommandServer::AccountState(index, state) => {
+                CommandServer::AccountPresence(index, state) => {
                     self.server.set_account_state(index, state);
+                }
+                CommandServer::AccountState(index, state) => {
+                    //self.server.set_account_state(index, state);
                 }
                 CommandServer::AccountWrite(index, write) => {
                     self.server.set_account_write(index, write);

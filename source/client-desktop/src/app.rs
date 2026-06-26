@@ -3,7 +3,6 @@ use eframe::egui::{
     self, Color32, ColorImage, FontId, ImageSource, Response, RichText, Spinner, TextureHandle,
     Vec2,
 };
-use egui_modal::Modal;
 use std::collections::HashMap;
 
 //================================================================
@@ -31,12 +30,14 @@ pub struct App {
     index_channel: ChannelID,
     setup: Setup,
     entry: String,
+    state: String,
     image: HashMap<u64, TextureHandle>,
     image_icon_main: Option<TextureHandle>,
     image_icon_side: Option<TextureHandle>,
     image_identifier: TextureHandle,
-    show_setup: bool,
-    show_poll: bool,
+    modal_poll: Option<Poll>,
+    modal: Option<fn(&mut Self, &mut egui::Ui)>,
+    exit: bool,
 }
 
 impl App {
@@ -58,18 +59,20 @@ impl App {
         ui.set_zoom_factor(user.zoom);
 
         Self {
-            system: System::new(&user),
+            system: System::new(&user, &ui),
             client: None,
             user,
             index_channel: 0,
             setup: Default::default(),
             entry: Default::default(),
+            state: Default::default(),
             image: Default::default(),
             image_icon_main,
             image_icon_side,
             image_identifier,
-            show_setup: Default::default(),
-            show_poll: Default::default(),
+            modal_poll: Default::default(),
+            modal: Default::default(),
+            exit: Default::default(),
         }
     }
 
@@ -113,6 +116,10 @@ impl App {
         } else {
             self.draw_main(ui);
         }
+
+        if let Some(modal) = &mut self.modal {
+            modal(self, ui);
+        }
     }
 
     fn draw_setup(&mut self, ui: &mut egui::Ui) {
@@ -137,17 +144,23 @@ impl App {
         */
         egui::Panel::top("top").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
-                Self::button_image(
+                if Self::button_image(
                     ui,
                     egui::include_image!("../asset/back.svg"),
                     Vec2::new(24.0, 24.0),
-                );
+                )
+                .clicked()
+                {
+                    self.modal = None;
+                };
 
                 ui.selectable_value(&mut self.setup, Setup::Account, "Account");
                 ui.selectable_value(&mut self.setup, Setup::Window, "Window");
                 ui.selectable_value(&mut self.setup, Setup::Notify, "Notify");
                 ui.selectable_value(&mut self.setup, Setup::Input, "Input");
             });
+
+            ui.add_space(4.0);
         });
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
@@ -156,23 +169,7 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.heading("Identifier");
 
-                        let modal = Modal::new(ui, "identifier_help");
-
-                        modal.show(|ui| {
-                            modal.title(ui, "Identifier Help");
-                            modal.frame(ui, |ui| {
-                                ui.label("An identifier can uniquely identify you across any Nimbus community. When connecting to a Nimbus server for the first time, it will register you using your identifier.\n
-                                    If you or another person using your identifier connect again to that community, they must prove ownership to your identifier.\n
-                                    For that reason, you must NOT share your identifier with anyone else.");
-                            });
-                            modal.buttons(ui, |ui| {
-                                modal.button(ui, "Close");
-                            });
-                        });
-
-                        if ui.button("?").clicked() {
-                            modal.open();
-                        }
+                        if ui.button("?").clicked() {}
                     });
 
                     ui.separator();
@@ -189,82 +186,27 @@ impl App {
 
                     //================
 
-                    let modal = Modal::new(ui, "identifier_image");
-
-                    modal.show(|ui| {
-                        modal.title(ui, "Identifier");
-                        modal.frame(ui, |ui| {
-                            ui.image(&self.image_identifier);
-                        });
-                        modal.buttons(ui, |ui| {
-                            modal.button(ui, "Close");
-                        });
-                    });
-
-                    if ui.button("Show Identifier QR Code").clicked() {
-                        modal.open();
-                    }
+                    // show identifier QR code
 
                     //================
 
-                    let modal = Modal::new(ui, "identifier_create");
-
-                    modal.show(|ui| {
-                        modal.title(ui, "Create Identifier");
-                        modal.frame(ui, |ui| {
-                            ui.label("WARNING! This will discard the current identifier. Make sure to export your identifier before continuing.")
-                        });
-                        modal.buttons(ui, |ui| {
-                            if modal.button(ui, "Create").clicked() {
-                                self.user.identifier  = Identifier::default();
-                                self.image_identifier = self.user.generate_image_identifier(ui.ctx());
-                            }
-                            modal.button(ui, "Cancel");
-                        });
-                    });
-
-                    if ui.button("Create Identifier").clicked() {
-                        modal.open();
-                    }
+                    // create identifier
 
                     //================
 
-                    let modal = Modal::new(ui, "identifier_import");
-
-                    modal.show(|ui| {
-                        modal.title(ui, "Import Identifier");
-                        modal.frame(ui, |ui| {
-                            ui.label("WARNING! This will discard the current identifier. Make sure to export your identifier before continuing.")
-                        });
-                        modal.buttons(ui, |ui| {
-                            if modal.button(ui, "Import").clicked() {
-                                self.user.identifier  = Identifier::default();
-                                self.image_identifier = self.user.generate_image_identifier(ui.ctx());
-                            }
-                            modal.button(ui, "Cancel");
-                        });
-                    });
-
-                    if ui.button("Import Identifier").clicked() {
-                        modal.open();
-                    }
+                    // import identifier
 
                     //================
 
                     ui.button("Export Identifier");
 
-
                     ui.heading("Persona");
                     ui.separator();
-
 
                     ui.label("User Icon (Main/Side)");
                     ui.horizontal(|ui| {
                         if let Some(icon) = &self.image_icon_main {
-                            ui.add(
-                                egui::Image::new(icon)
-                                    .fit_to_exact_size(Vec2::new(64.0, 64.0)),
-                            );
+                            ui.add(egui::Image::new(icon).fit_to_exact_size(Vec2::new(64.0, 64.0)));
                         } else {
                             ui.add(
                                 egui::Image::new(egui::include_image!("../asset/user.svg"))
@@ -274,8 +216,7 @@ impl App {
 
                         if let Some(icon) = &self.image_icon_side {
                             ui.add(
-                                egui::Image::new(icon)
-                                    .fit_to_exact_size(Vec2::new(256.0, 64.0)),
+                                egui::Image::new(icon).fit_to_exact_size(Vec2::new(256.0, 64.0)),
                             );
                         } else {
                             ui.add(
@@ -285,12 +226,18 @@ impl App {
                         };
                     });
 
-                    if ui.button("Set Main User Icon").clicked() && let Some(file) = rfd::FileDialog::new().pick_file() {
-                        self.user.icon_main = Some(std::fs::read(file).unwrap());
-                    }
-                    if ui.button("Set Side User Icon").clicked() && let Some(file) = rfd::FileDialog::new().pick_file() {
-                        self.user.icon_side = Some(std::fs::read(file).unwrap());
-                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("Set Main Icon").clicked()
+                            && let Some(file) = rfd::FileDialog::new().pick_file()
+                        {
+                            self.user.icon_main = Some(std::fs::read(file).unwrap());
+                        }
+                        if ui.button("Set Side Icon").clicked()
+                            && let Some(file) = rfd::FileDialog::new().pick_file()
+                        {
+                            self.user.icon_side = Some(std::fs::read(file).unwrap());
+                        }
+                    });
 
                     ui.label("Nick Name");
                     ui.text_edit_singleline(&mut self.user.name_nick);
@@ -519,7 +466,14 @@ impl App {
         egui::Popup::from_toggle_button_response(&response).show(content);
     }
 
-    fn draw_account(ui: &mut egui::Ui, client: Option<&mut Client>, account: &Account) {
+    fn draw_account(
+        ui: &mut egui::Ui,
+        client: Option<&mut Client>,
+        account: &Account,
+    ) -> (bool, bool) {
+        let mut modal_state = false;
+        let mut modal_setup = false;
+
         ui.horizontal(|ui| {
             if let Some(client) = &client {
                 let response = Self::button_image(
@@ -529,13 +483,13 @@ impl App {
                 );
 
                 Self::pop_up("status", response, ui, |ui| {
-                    let mut state = client.server.account[&client.index].state.clone();
+                    let mut state = client.server.account[&client.index].presence.clone();
                     let mut click = false;
                     let state_list = [
-                        (AccountState::Online, "Online"),
-                        (AccountState::Away, "Away"),
-                        (AccountState::Busy, "Busy"),
-                        (AccountState::Offline, "Offline"),
+                        (AccountPresence::Online, "Online"),
+                        (AccountPresence::Away, "Away"),
+                        (AccountPresence::Busy, "Busy"),
+                        (AccountPresence::Offline, "Offline"),
                     ];
 
                     for (s, n) in state_list {
@@ -544,8 +498,14 @@ impl App {
                         }
                     }
 
+                    ui.separator();
+
+                    if ui.button("Set State").clicked() {
+                        modal_state = true;
+                    }
+
                     if click {
-                        client.send(CommandClient::AccountState(state));
+                        client.send(CommandClient::AccountPresence(state));
                     }
                 });
             } else {
@@ -563,11 +523,11 @@ impl App {
                 .translate(Vec2::new(14.0, 14.0))
                 .scale_from_center(0.25);
 
-            let color = match account.state {
-                AccountState::Online => Color32::GREEN,
-                AccountState::Away => Color32::ORANGE,
-                AccountState::Busy => Color32::RED,
-                AccountState::Offline => Color32::DARK_GRAY,
+            let color = match account.presence {
+                AccountPresence::Online => Color32::GREEN,
+                AccountPresence::Away => Color32::ORANGE,
+                AccountPresence::Busy => Color32::RED,
+                AccountPresence::Offline => Color32::DARK_GRAY,
             };
 
             egui::Image::new(egui::include_image!("../asset/dot.svg"))
@@ -583,9 +543,13 @@ impl App {
                     Vec2::new(32.0, 32.0),
                 )
                 .clicked()
-                {};
+                {
+                    modal_setup = true;
+                };
             }
         });
+
+        (modal_state, modal_setup)
     }
 
     fn draw_error(&mut self, ui: &mut egui::Ui) {
@@ -619,93 +583,150 @@ impl App {
     }
 
     fn draw_chat(&mut self, ui: &mut egui::Ui) {
+        self.draw_chat_l(ui);
+        self.draw_chat_r(ui);
+        self.draw_chat_c(ui);
+    }
+
+    fn draw_chat_l(&mut self, ui: &mut egui::Ui) {
         let client = self.client.as_mut().unwrap();
 
-        egui::Panel::left("left").show_inside(ui, |ui| {
-            ui.add_space(5.0);
+        egui::Panel::left("left")
+            .resizable(false)
+            .show_inside(ui, |ui| {
+                ui.add_space(5.0);
 
-            ui.horizontal(|ui| {
-                Self::button_image(
-                    ui,
-                    ImageSource::Uri("file:///home/lux/Desktop/deer.png".to_string().into()),
-                    Vec2::new(32.0, 32.0),
-                );
+                ui.horizontal(|ui| {
+                    Self::button_image(
+                        ui,
+                        ImageSource::Uri("file:///home/lux/Desktop/deer.png".to_string().into()),
+                        Vec2::new(32.0, 32.0),
+                    );
 
-                ui.label(RichText::new(&client.server.name).strong());
-            });
+                    ui.label(RichText::new(&client.server.name).strong());
+                });
 
-            ui.separator();
+                ui.separator();
 
-            let mut seen = vec![];
+                let mut seen = vec![];
 
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .max_height(ui.available_height() - 48.0)
-                .show(ui, |ui| {
-                    //
-                    for c in &client.server.category {
-                        for i in &c.list {
-                            if !seen.contains(i) {
-                                seen.push(*i);
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .max_height(ui.available_height() - 48.0)
+                    .show(ui, |ui| {
+                        //
+                        for c in &client.server.category {
+                            for i in &c.list {
+                                if !seen.contains(i) {
+                                    seen.push(*i);
+                                }
                             }
+
+                            ui.collapsing(&c.name, |ui| {
+                                for i in &c.list {
+                                    let channel = &client.server.channel[&i];
+
+                                    if ui
+                                        .selectable_value(
+                                            &mut self.index_channel,
+                                            *i as u64,
+                                            &format!("#{}", channel.name),
+                                        )
+                                        .clicked()
+                                    {
+                                        client.send(CommandClient::AccountChannel(*i as ChannelID));
+                                    };
+                                }
+                            });
                         }
 
-                        ui.collapsing(&c.name, |ui| {
-                            for i in &c.list {
-                                let channel = &client.server.channel[&i];
-
+                        for (i, c) in &client.server.channel {
+                            if !seen.contains(i) {
                                 if ui
                                     .selectable_value(
                                         &mut self.index_channel,
                                         *i as u64,
-                                        &format!("#{}", channel.name),
+                                        &format!("#{}", c.name),
                                     )
                                     .clicked()
                                 {
                                     client.send(CommandClient::AccountChannel(*i as ChannelID));
                                 };
+
+                                seen.push(*i);
                             }
-                        });
-                    }
-
-                    for (i, c) in &client.server.channel {
-                        if !seen.contains(i) {
-                            if ui
-                                .selectable_value(
-                                    &mut self.index_channel,
-                                    *i as u64,
-                                    &format!("#{}", c.name),
-                                )
-                                .clicked()
-                            {
-                                client.send(CommandClient::AccountChannel(*i as ChannelID));
-                            };
-
-                            seen.push(*i);
                         }
-                    }
-                });
+                    });
 
-            egui::Area::new("account".into())
-                .fixed_pos([ui.cursor().min.x, ui.viewport_rect().max.y - 48.0])
-                .show(ui, |ui| {
-                    ui.separator();
+                egui::Area::new("account".into())
+                    .fixed_pos([ui.cursor().min.x, ui.viewport_rect().max.y - 48.0])
+                    .show(ui, |ui| {
+                        ui.separator();
 
-                    let account = client.server.account[&client.index].clone();
-                    Self::draw_account(ui, Some(client), &account);
-                });
-        });
+                        let account = client.server.account[&client.index].clone();
+                        let (state, setup) = Self::draw_account(ui, Some(client), &account);
 
-        egui::Panel::right("right").show_inside(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.add_space(6.0);
-                    for (_, account) in &client.server.account {
-                        Self::draw_account(ui, None, account);
-                    }
-                });
-        });
+                        if state {
+                            self.modal = Some(|this, ui| {
+                                egui::Modal::new("state".into()).show(ui.ctx(), |ui| {
+                                    ui.heading("Set State");
+                                    ui.separator();
+
+                                    ui.label("State");
+                                    ui.text_edit_singleline(&mut this.state);
+
+                                    ui.separator();
+                                    ui.horizontal(|ui| {
+                                        if ui.button("Accept").clicked() {
+                                            this.client.as_mut().unwrap().send(
+                                                CommandClient::AccountState(Some(
+                                                    this.state.clone(),
+                                                )),
+                                            );
+                                            this.modal = None;
+                                            this.state.clear();
+                                        }
+                                        if ui.button("Cancel").clicked() {
+                                            this.modal = None;
+                                            this.state.clear();
+                                        }
+                                    });
+                                });
+                            });
+                        }
+
+                        if setup {
+                            self.modal = Some(|this, ui| {
+                                egui::Modal::new("setup".into()).show(ui.ctx(), |ui| {
+                                    // TO-DO make this proportional to window
+                                    ui.set_min_height(512.0);
+                                    this.draw_setup(ui);
+                                });
+                            });
+                        }
+                    });
+            });
+    }
+
+    fn draw_chat_r(&mut self, ui: &mut egui::Ui) {
+        let client = self.client.as_mut().unwrap();
+
+        egui::Panel::right("right")
+            .resizable(false)
+            .show_inside(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.add_space(6.0);
+                        for (_, account) in &client.server.account {
+                            Self::draw_account(ui, None, account);
+                        }
+                    });
+            });
+    }
+
+    fn draw_chat_c(&mut self, ui: &mut egui::Ui) {
+        let client = self.client.as_mut().unwrap();
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
             let channel = client.server.channel.get(&self.index_channel).unwrap();
@@ -720,60 +741,101 @@ impl App {
                 .auto_shrink([false, false])
                 .max_height(ui.available_height() - 48.0)
                 .show(ui, |ui| {
-                    /*
-                    for x in 0..32 {
-                        let image = egui::Image::new(ImageSource::Uri(
-                            "file:///home/lux/Desktop/deer.png".to_string().into(),
-                        ))
-                        .fit_to_exact_size(Vec2::new(40.0, 40.0))
-                        .corner_radius(40.0);
-
-                        ui.add(image);
-
-                        ui.label("foo");
-                    }
-                    */
+                    let mut previous = None;
 
                     for (index, message) in &channel.message {
+                        let draw_avatar = if let Some(previous) = previous {
+                            std::mem::discriminant(&message.kind) != previous
+                        } else {
+                            true
+                        };
+
                         let response = ui.horizontal(|ui| {
-                            let image = egui::Image::new(ImageSource::Uri(
-                                "file:///home/lux/Desktop/deer.png".to_string().into(),
-                            ))
-                            .fit_to_exact_size(Vec2::new(32.0, 32.0))
-                            .corner_radius(32.0);
+                            if draw_avatar {
+                                let image = egui::Image::new(ImageSource::Uri(
+                                    "file:///home/lux/Desktop/deer.png".to_string().into(),
+                                ))
+                                .fit_to_exact_size(Vec2::new(32.0, 32.0))
+                                .corner_radius(32.0);
 
-                            ui.add(image);
+                                ui.add(image);
+                            }
 
-                            ui.vertical(|ui| {
-                                let from = message.account(&client.server);
-
-                                ui.horizontal(|ui| {
-                                    ui.label(RichText::new(&from.name_nick).strong());
-                                    ui.label(RichText::new("9:41").weak());
-                                });
-
-                                match &message.kind {
-                                    MessageKind::Text(text) => {
-                                        ui.label(text);
-                                    }
-                                    MessageKind::File(name, data) => {
-                                        if ui.button(format!("File attachment ({name})")).clicked()
-                                        {
-                                            if let Some(path) = rfd::FileDialog::new()
-                                                .set_title("Save file.")
-                                                .set_file_name(name)
-                                                .save_file()
-                                            {
-                                                std::fs::write(path, data);
-                                            }
-                                        }
-                                    }
-                                    MessageKind::Sticker(sticker) => {
-                                        if let Some(image) = self.image.get(&sticker) {
-                                            ui.image(image);
-                                        }
-                                    }
+                            ui.horizontal(|ui| {
+                                if !draw_avatar {
+                                    ui.add_space(40.0);
                                 }
+
+                                egui::Frame::group(ui.style())
+                                    .corner_radius(8.0)
+                                    .show(ui, |ui| {
+                                        ui.vertical(|ui| {
+                                            if draw_avatar {
+                                                let from = message.account(&client.server);
+
+                                                ui.horizontal(|ui| {
+                                                    ui.label(RichText::new(&from.name_nick).strong());
+                                                    ui.label(RichText::new("9:41").weak());
+                                                });
+                                            }
+
+                                            match &message.kind {
+                                                MessageKind::Text(text) => {
+                                                    ui.label(text);
+                                                }
+                                                MessageKind::File(name, data) => {
+                                                    if ui.button(format!("File attachment ({name})")).clicked()
+                                                    {
+                                                        if let Some(path) = rfd::FileDialog::new()
+                                                            .set_title("Save file.")
+                                                            .set_file_name(name)
+                                                            .save_file()
+                                                        {
+                                                            std::fs::write(path, data);
+                                                        }
+                                                    }
+                                                }
+                                                MessageKind::Poll(poll) => {
+                                                    ui.label(RichText::new(&poll.name).strong());
+                                                    ui.separator();
+
+                                                    let mut add = 0;
+
+                                                    for choice in &poll.choice {
+                                                        add += choice.vote.len();
+                                                    }
+
+                                                    for (index_choice, choice) in poll.choice.iter().enumerate() {
+                                                        let progress = if add > 0 {
+                                                            (choice.vote.len() as f32 / add as f32)
+                                                        } else {
+                                                            0.0
+                                                        };
+
+                                                        ui.label(&choice.name);
+
+                                                        ui.horizontal(|ui| {
+                                                            if ui.checkbox(&mut choice.vote.contains(&client.index), "").clicked() {
+                                                                client.send(CommandClient::PollVote(self.index_channel, *index, index_choice));
+                                                            };
+                                                            ui.add(egui::ProgressBar::new(progress).text(format!("{:.0}% - {}", progress * 100.0, choice.vote.len().to_string()))).on_hover_ui(|ui| {
+                                                                for account in &choice.vote {
+                                                                    let account = &client.server.account[account];
+                                                                    // TO-DO somehow broken?
+                                                                    ui.label(&account.name_nick);
+                                                                }
+                                                            });
+                                                        });
+                                                    }
+                                                }
+                                                MessageKind::Sticker(sticker) => {
+                                                    if let Some(image) = self.image.get(&sticker) {
+                                                        ui.image(image);
+                                                    }
+                                                }
+                                            }
+                                        });
+                                });
                             });
                         }).response;
 
@@ -791,6 +853,8 @@ impl App {
                         });
 
                         ui.add_space(4.0);
+
+                        previous = Some(std::mem::discriminant(&message.kind));
                     }
                 });
 
@@ -833,7 +897,6 @@ impl App {
 
                     ui.separator();
 
-
                     ui.horizontal(|ui| {
                         let add = Self::button_image(
                             ui,
@@ -846,18 +909,75 @@ impl App {
                         Self::pop_up("plus", add, ui, |ui| {
                             ui.button("Upload File");
                             if ui.button("Submit Poll").clicked() {
-                                self.show_poll = true;
+                                self.modal_poll = Some(Poll::default());
                             };
                         });
 
-                        if self.show_poll {
+                        if let Some(mut poll) = self.modal_poll.clone()  {
                             egui::Modal::new("blah".into()).show(ui.ctx(), |ui| {
-                                ui.label("Hello");
+                                ui.heading("Submit Poll");
+                                ui.separator();
 
-                                if ui.button("Close").clicked() {
-                                    self.show_poll = false;
+                                ui.label("Poll Name");
+                                ui.text_edit_singleline(&mut poll.name);
+
+                                // TO-DO add remove choice
+                                for (i, choice) in &mut poll.choice.iter_mut().enumerate() {
+                                    ui.horizontal(|ui| {
+                                        ui.label(format!("Choice #{}", i + 1));
+                                        if let Some(correct) = poll.correct {
+                                            let mut pick_a = correct == i;
+                                            let mut pick_b = correct == i;
+
+                                            ui.checkbox(&mut pick_a, "Correct answer");
+
+                                            if pick_a && !pick_b {
+                                                poll.correct = Some(i);
+                                            }
+                                        }
+                                    });
+                                    ui.text_edit_singleline(&mut choice.name);
                                 }
+
+                                if ui.button("Add Choice").clicked() {
+                                    poll.choice.push(PollChoice::default());
+                                }
+
+                                ui.checkbox(&mut poll.hidden, "Hide voter name");
+                                ui.checkbox(&mut poll.single, "Allow more than one choice");
+                                ui.checkbox(&mut poll.attach, "Allow adding a new choice");
+                                ui.checkbox(&mut poll.revoke, "Allow re-voting");
+
+                                let mut correct_a = poll.correct.is_some();
+                                let mut correct_b = poll.correct.is_some();
+
+                                ui.checkbox(&mut correct_a, "Set correct choice");
+
+                                if correct_a && !correct_b {
+                                    poll.correct = Some(0);
+                                }
+                                if !correct_a && correct_b {
+                                    poll.correct = None;
+                                }
+
+                                ui.separator();
+                                ui.horizontal(|ui| {
+                                    ui.add_enabled_ui(poll.is_valid().is_ok(), |ui| {
+                                        if ui.button("Submit").clicked() {
+                                            client.send(CommandClient::Message(self.index_channel, MessageKind::Poll(poll.clone())));
+                                            self.modal_poll = None;
+                                        }
+                                    });
+
+                                    if ui.button("Close").clicked() {
+                                        self.modal_poll = None;
+                                    }
+                                });
                             });
+
+                            if self.modal_poll.is_some() {
+                                self.modal_poll = Some(poll);
+                            }
                         }
 
                         // TO-DO
@@ -902,23 +1022,26 @@ impl App {
                                 }
                             }
 
-                            /*
+
+                        });
+                        Self::pop_up("plus", Self::button_image(
+                            ui,
+                            egui::include_image!("../asset/emote.svg"),
+                            Vec2::new(32.0, 32.0),
+                        ), ui, |ui| {
                             ui.vertical(|ui| {
-                                for y in 0..4 {
+                                for y in 0..8 {
                                     ui.horizontal(|ui| {
-                                        for x in 0..4 {
-                                            ui.button(format!("{x} x {y}"));
+                                        for x in 0..8 {
+                                            if ui.button("😊").clicked() {
+                                                self.entry.push('😊');
+                                            }
                                         }
                                     });
                                 }
                             });
-                            */
                         });
-                        Self::button_image(
-                            ui,
-                            egui::include_image!("../asset/emote.svg"),
-                            Vec2::new(32.0, 32.0),
-                        );
+
                         if Self::button_image(
                             ui,
                             egui::include_image!("../asset/send.svg"),
@@ -947,5 +1070,18 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
         self.draw(ui);
+
+        let mut exit = false;
+
+        ui.input(|i| {
+            if i.viewport().close_requested() {
+                exit = true;
+            }
+        });
+
+        if exit && !self.system.exit() {
+            ui.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ui.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
     }
 }

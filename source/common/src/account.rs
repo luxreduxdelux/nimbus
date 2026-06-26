@@ -20,12 +20,13 @@ pub struct Account {
     pub index: AccountID,
     pub channel: ChannelID,
     pub activity: Option<AccountActivity>,
-    pub state: AccountState,
+    pub presence: AccountPresence,
+    pub state: Option<String>,
     pub write: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum AccountState {
+pub enum AccountPresence {
     #[default]
     Online,
     Away,
@@ -138,6 +139,7 @@ impl AccountConnect {
             index,
             channel: Default::default(),
             activity: Default::default(),
+            presence: Default::default(),
             state: Default::default(),
             write: Default::default(),
         }
