@@ -135,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
 
                     // TO-DO maybe should be CommandServer::AccountLeave?
                     app.server
-                        .set_account_state(index, AccountPresence::Offline);
+                        .set_account_presence(index, AccountPresence::Offline);
                     app.server.set_account_write(index, false);
                     app.send_all(CommandServer::AccountPresence(
                         index,
@@ -170,10 +170,16 @@ async fn main() -> anyhow::Result<()> {
                     app.send_all(CommandServer::AccountChannel(index, *channel))
                         .await;
                 }
-                CommandClient::AccountPresence(state) => {
+                CommandClient::AccountPresence(presence) => {
+                    let mut app = app_c.lock().await;
+                    app.server.set_account_presence(index, presence.clone());
+                    app.send_all(CommandServer::AccountPresence(index, presence.clone()))
+                        .await;
+                }
+                CommandClient::AccountState(state) => {
                     let mut app = app_c.lock().await;
                     app.server.set_account_state(index, state.clone());
-                    app.send_all(CommandServer::AccountPresence(index, state.clone()))
+                    app.send_all(CommandServer::AccountState(index, state.clone()))
                         .await;
                 }
                 CommandClient::AccountWrite(write) => {

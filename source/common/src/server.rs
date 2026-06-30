@@ -23,6 +23,7 @@ pub struct Server {
     pub account: BTreeMap<AccountID, Account>,
     pub channel: BTreeMap<ChannelID, Channel>,
     pub sticker: BTreeMap<StickerID, Sticker>,
+    pub private: BTreeMap<(AccountID, AccountID), Channel>,
     pub category: Vec<Category>,
     pub name: String,
     pub info: String,
@@ -52,9 +53,15 @@ impl Server {
         }
     }
 
-    pub fn set_account_state(&mut self, account: AccountID, state: AccountPresence) {
+    pub fn set_account_presence(&mut self, account: AccountID, presence: AccountPresence) {
         if let Some(account) = self.account.get_mut(&account) {
-            account.presence = state;
+            account.presence = presence;
+        }
+    }
+
+    pub fn set_account_state(&mut self, account: AccountID, state: Option<String>) {
+        if let Some(account) = self.account.get_mut(&account) {
+            account.state = state;
         }
     }
 
@@ -165,6 +172,7 @@ impl Default for Server {
             account: Default::default(),
             channel: Default::default(),
             sticker: Default::default(),
+            private: Default::default(),
             category: Default::default(),
             name: Self::DEFAULT_NAME.to_string(),
             info: Self::DEFAULT_INFO.to_string(),

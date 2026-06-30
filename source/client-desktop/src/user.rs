@@ -16,11 +16,13 @@ pub struct User {
     pub name_nick: String,
     pub name_user: String,
     pub info: String,
-    pub icon_main: Option<Vec<u8>>,
-    pub icon_side: Option<Vec<u8>>,
+    pub icon: Option<Vec<u8>>,
     pub theme: egui::Visuals,
     pub zoom: f32,
-    pub address: String,
+    pub tray_show: bool,
+    pub tray_icon: bool,
+    pub push: bool,
+    pub address: Vec<String>,
 }
 
 impl User {
@@ -57,8 +59,7 @@ impl Into<AccountConnect> for User {
             name_nick: self.name_nick.clone(),
             name_user: self.name_user.clone(),
             info: self.info.clone(),
-            icon_main: self.icon_main.clone(),
-            icon_side: self.icon_side.clone(),
+            icon: self.icon.clone(),
         }
     }
 }
@@ -76,11 +77,13 @@ impl Default for User {
                 name_nick: Default::default(),
                 name_user: Default::default(),
                 info: Default::default(),
-                icon_main: Default::default(),
-                icon_side: Default::default(),
+                icon: Default::default(),
                 theme: Default::default(),
                 zoom: 1.0,
-                address: "127.0.0.1".to_string(),
+                tray_show: Default::default(),
+                tray_icon: Default::default(),
+                push: Default::default(),
+                address: vec!["127.0.0.1".to_string()],
             }
         }
     }

@@ -9,4 +9,5 @@ serde         = { version = "1.0",   features = ["derive"]    }
 bincode       = { version = "2.0",   features = ["serde"]     }
 ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
 anyhow        = { version = "1.0"    }
+getrandom     = { version = "0.2",   features = ["js"]        }
 common        = { path = "../common" }

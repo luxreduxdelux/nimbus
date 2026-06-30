@@ -3,6 +3,7 @@ pub mod category;
 pub mod channel;
 pub mod command;
 pub mod identifier;
+pub mod markdown;
 pub mod message;
 pub mod prelude;
 pub mod server;
