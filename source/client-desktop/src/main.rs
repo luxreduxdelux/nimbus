@@ -5,6 +5,8 @@ mod user;
 
 //================================================================
 
+use client::common::markdown::Token;
+
 use crate::app::*;
 
 //================================================================
@@ -16,7 +18,7 @@ async fn main() -> eframe::Result {
     let option = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 800.0])
-            .with_min_inner_size([640.0, 480.0])
+            .with_min_inner_size([1024.0, 768.0])
             .with_icon(std::sync::Arc::new(icon)),
         centered: true,
         ..Default::default()
@@ -31,3 +33,10 @@ async fn main() -> eframe::Result {
         }),
     )
 }
+
+/*
+fn main() {
+    let markdown = Token::parse("#test");
+    println!("{markdown:#?}");
+}
+*/

@@ -100,7 +100,7 @@ impl AccountConnect {
             return Err(UserError::Length);
         }
 
-        if !user.chars().all(|c| c.is_ascii_alphanumeric()) {
+        if !user.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             return Err(UserError::InvalidASCII);
         }
 

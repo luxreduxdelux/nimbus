@@ -4,13 +4,38 @@ use std::str::Chars;
 
 #[derive(Debug, Clone)]
 pub enum Token {
+    /// Plain text. (hello, world)
     Text(String),
+    /// Italic text. (*hello, world*)
     Italic(String),
+    /// Bold text. (**hello, world**)
     Bold(String),
+    /// Bold and italic text. (***hello, world***)
     BoldItalic(String),
+    /// Account text. (@luxreduxdelux)
     Account(String),
+    /// Channel text. (#general)
     Channel(String),
+    /// Emote text. (:smiley:)
     Emote(String),
+    /// Hidden text. (||it's a secret||)
+    Hidden(String),
+    /// Header (type A) text. (# hello, world)
+    HeaderA(String),
+    /// Header (type B) text. (## hello, world)
+    HeaderB(String),
+    /// Header (type C) text. (### hello, world)
+    HeaderC(String),
+    /// Sub-text. (-# hello, world)
+    SubText(String),
+    /// Link text. ([a link to somewhere](www.google.com))
+    Link(String, String),
+    /// Code (type A) text. (`fn foo() {}`)
+    CodeA(String),
+    /// Code (type B) text. (```fn foo() {}```)
+    CodeB(String),
+    /// Quote text. (> hello, world)
+    Quote(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +47,15 @@ pub enum TokenKind {
     Account,
     Channel,
     Emote,
+    Hidden,
+    HeaderA,
+    HeaderB,
+    HeaderC,
+    SubText,
+    Link,
+    CodeA,
+    CodeB,
+    Quote,
 }
 
 impl Token {
@@ -80,7 +114,87 @@ impl Token {
                         }
                     }
                 }
-                _ => buffer.push(character),
+                '@' => {
+                    if !buffer.is_empty() {
+                        result.push(Self::from_string(buffer.clear()));
+                    }
+
+                    which = TokenKind::Account;
+                    buffer.push(character);
+                }
+                '#' => {
+                    if !buffer.is_empty() {
+                        result.push(Self::from_string(buffer.clear()));
+                    }
+
+                    which = TokenKind::Channel;
+                    buffer.push(character);
+                }
+                ':' => {
+                    if which == TokenKind::Emote {
+                        which = TokenKind::Text;
+
+                        buffer.push(character);
+                        result.push(Self::from_string(buffer.clear()))
+                    } else {
+                        which = TokenKind::Emote;
+
+                        if !buffer.is_empty() {
+                            result.push(Self::from_string(buffer.clear()));
+                        }
+
+                        buffer.push(character);
+                    }
+                }
+                '|' => {
+                    let next = Self::peek(string.clone(), 0, '|');
+
+                    if next {
+                        if which == TokenKind::Hidden {
+                            which = TokenKind::Text;
+
+                            buffer.push(character);
+                            buffer.push(string.next().unwrap());
+
+                            result.push(Self::from_string(buffer.clear()))
+                        } else {
+                            which = TokenKind::Hidden;
+
+                            if !buffer.is_empty() {
+                                result.push(Self::from_string(buffer.clear()));
+                            }
+
+                            buffer.push(character);
+                            buffer.push(string.next().unwrap());
+                        }
+                    } else {
+                        buffer.push(character);
+                    }
+                }
+                _ => {
+                    //
+                    match which {
+                        TokenKind::Account | TokenKind::Channel => {
+                            if !character.is_alphabetic() {
+                                result.push(Self::from_string(buffer.clear()));
+                                which = TokenKind::Text;
+                                buffer.push(character);
+                            } else {
+                                buffer.push(character);
+                            }
+                        }
+                        TokenKind::Emote => {
+                            if !character.is_alphabetic() {
+                                which = TokenKind::Text;
+                            }
+
+                            buffer.push(character);
+                        }
+                        _ => {
+                            buffer.push(character);
+                        }
+                    }
+                }
             }
         }
 
@@ -107,6 +221,8 @@ impl Token {
                 Self::Channel(text)
             } else if Self::start_end(&text, ":") {
                 Self::Emote(text[1..text.len() - 1].to_string())
+            } else if Self::start_end(&text, "||") {
+                Self::Hidden(text[2..text.len() - 2].to_string())
             } else {
                 Self::Text(text)
             }

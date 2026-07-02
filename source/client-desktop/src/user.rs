@@ -20,8 +20,9 @@ pub struct User {
     pub theme: egui::Visuals,
     pub zoom: f32,
     pub tray_show: bool,
-    pub tray_icon: bool,
-    pub push: bool,
+    pub notify_push: bool,
+    pub notify_tray: bool,
+    pub notify_sound: bool,
     pub address: Vec<String>,
 }
 
@@ -74,15 +75,16 @@ impl Default for User {
         } else {
             Self {
                 identifier: Default::default(),
-                name_nick: Default::default(),
-                name_user: Default::default(),
-                info: Default::default(),
+                name_nick: "Nimbus User".to_string(),
+                name_user: "nimbus_user".to_string(),
+                info: "Sure is nice being a Nimbus user around here!".to_string(),
                 icon: Default::default(),
                 theme: Default::default(),
                 zoom: 1.0,
-                tray_show: Default::default(),
-                tray_icon: Default::default(),
-                push: Default::default(),
+                tray_show: true,
+                notify_push: true,
+                notify_tray: true,
+                notify_sound: true,
                 address: vec!["127.0.0.1".to_string()],
             }
         }

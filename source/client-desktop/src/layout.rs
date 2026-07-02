@@ -1,3 +1,4 @@
+use egui::RichText;
 use egui::{
     self, Color32, ColorImage, FontFamily, FontId, ImageSource, IntoAtoms, Response, TextStyle,
     TextureHandle, Vec2,
@@ -20,21 +21,30 @@ enum SetupIndex {
     Input,
 }
 
+#[derive(Default, Copy, Clone, PartialEq, Eq)]
+enum FriendIndex {
+    #[default]
+    Online,
+    All,
+}
+
 #[derive(Default, Clone)]
 pub struct Layout {
     modal: Option<fn(&mut App, &mut egui::Ui)>,
+    modal_address: String,
     index_server: Option<usize>,
     index_channel: Option<usize>,
     index_account: Option<usize>,
     index_setup: SetupIndex,
+    index_friend: FriendIndex,
     setup_user: User,
-    modal_address: String,
+    entry_text: String,
+    panel_user: bool,
 }
 
 impl Layout {
     const IMAGE_SEARCH: ImageSource<'_> = egui::include_image!("../asset/search.svg");
     const IMAGE_STAR_MESSAGE: ImageSource<'_> = egui::include_image!("../asset/star_message.svg");
-    const IMAGE_USER_SIDE: ImageSource<'_> = egui::include_image!("../asset/user_side.svg");
     const IMAGE_COG: ImageSource<'_> = egui::include_image!("../asset/cog.svg");
     const IMAGE_REPLY: ImageSource<'_> = egui::include_image!("../asset/reply.svg");
     const IMAGE_EMOTE: ImageSource<'_> = egui::include_image!("../asset/emote.svg");
@@ -46,6 +56,11 @@ impl Layout {
     const IMAGE_SEND: ImageSource<'_> = egui::include_image!("../asset/send.svg");
     const IMAGE_BACK: ImageSource<'_> = egui::include_image!("../asset/back.svg");
     const IMAGE_USER: ImageSource<'_> = egui::include_image!("../asset/user.svg");
+    const IMAGE_USER_SIDE: ImageSource<'_> = egui::include_image!("../asset/user_side.svg");
+    const IMAGE_USER_FRIEND: ImageSource<'_> = egui::include_image!("../asset/user_friend.svg");
+    const IMAGE_USER_ADD: ImageSource<'_> = egui::include_image!("../asset/user_add.svg");
+    const IMAGE_USER_CODE: ImageSource<'_> = egui::include_image!("../asset/user_code.svg");
+    const IMAGE_USER_ONLINE: ImageSource<'_> = egui::include_image!("../asset/user_online.svg");
     const IMAGE_WINDOW: ImageSource<'_> = egui::include_image!("../asset/window.svg");
     const IMAGE_NOTIFY: ImageSource<'_> = egui::include_image!("../asset/notify.svg");
     const IMAGE_INPUT: ImageSource<'_> = egui::include_image!("../asset/input.svg");
@@ -56,45 +71,68 @@ impl Layout {
     const IMAGE_PLUS: ImageSource<'_> = egui::include_image!("../asset/plus.svg");
     const IMAGE_TEST: ImageSource<'_> = egui::include_image!("../asset/test.png");
     const BUTTON_IMAGE_SCALE: Vec2 = Vec2::new(40.0, 40.0);
+    const PANEL_L_SIZE: f32 = 376.0;
+    const PANEL_R_SIZE: f32 = 264.0;
 
     //================================================================
 
     pub fn draw(app: &mut App, ui: &mut egui::Ui) {
-        let height = ui.available_height();
+        let height = ui.available_height() - 66.0;
 
-        egui::Panel::left("panel_l").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_min_height(height);
-                    ui.add_space(4.0);
-                    Self::draw_picker_l(app, ui);
+        egui::Panel::left("panel_l")
+            .min_size(Self::PANEL_L_SIZE)
+            .max_size(Self::PANEL_L_SIZE)
+            .resizable(false)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_min_height(height);
+                        ui.add_space(4.0);
+                        Self::draw_picker_l(app, ui);
+                    });
+
+                    ui.separator();
+
+                    ui.vertical(|ui| {
+                        ui.set_min_height(height);
+                        ui.add_space(4.0);
+                        if app.layout.index_server.is_none() {
+                            Self::draw_picker_r_account(app, ui);
+                        } else {
+                            Self::draw_picker_r_channel(app, ui);
+                        }
+                    });
                 });
 
                 ui.separator();
 
-                ui.vertical(|ui| {
-                    ui.set_min_height(height);
-                    ui.add_space(4.0);
-                    if app.layout.index_server.is_none() {
-                        Self::draw_picker_r_account(app, ui);
-                    } else {
-                        Self::draw_picker_r_channel(app, ui);
-                    }
-                });
+                let (account, cog) = Self::draw_account(ui);
+
+                if cog {
+                    app.layout.modal = Some(Self::modal_setup);
+                }
             });
-        });
+
+        if app.layout.index_server.is_some() && app.layout.panel_user {
+            egui::Panel::right("panel_r")
+                .min_size(Self::PANEL_R_SIZE)
+                .max_size(Self::PANEL_R_SIZE)
+                .resizable(false)
+                .show(ui, |ui| {
+                    ui.label("foo");
+                });
+        }
 
         egui::CentralPanel::default().show(ui, |ui| {
             if app.layout.index_server.is_none() {
                 if app.layout.index_account.is_none() {
-                    Self::draw_setup(app, ui);
+                    Self::draw_friend_list(app, ui);
+                    //Self::draw_setup(app, ui);
                 } else {
                     Self::draw_chat_account(app, ui);
                 }
             } else {
-                if app.layout.index_channel.is_none() {
-                    Self::draw_chat_channel(app, ui);
-                }
+                Self::draw_chat_channel(app, ui);
             }
         });
 
@@ -104,27 +142,100 @@ impl Layout {
     }
 
     fn draw_chat_channel(app: &mut App, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label("Channel Name");
-                ui.label("Channel Info");
-            });
+        if let Some(index) = app.layout.index_channel {
+            let client = &app.client.client[app.layout.index_server.unwrap()];
+            let channel = &client.server.channel[&(index as u64)];
 
-            Self::draw_button_image(ui, Self::IMAGE_SEARCH);
-            Self::draw_button_image(ui, Self::IMAGE_SEARCH);
-            Self::draw_button_image(ui, Self::IMAGE_SEARCH);
-            Self::draw_button_image(ui, Self::IMAGE_SEARCH);
-        });
+            let width = (ui.available_width() - (Self::BUTTON_IMAGE_SCALE.x + 14.0) * 4.0).max(0.0);
 
-        ui.separator();
+            ui.horizontal(|ui| {
+                Self::allocate_size(ui, width, |ui| {
+                    ui.vertical(|ui| {
+                        ui.add(egui::Label::new(RichText::new(&channel.name).strong()).truncate());
+                        ui.add(egui::Label::new(&channel.info).truncate());
+                    });
+                });
 
-        egui::ScrollArea::vertical()
-            .id_salt("scroll_chat")
-            .show(ui, |ui| {
-                for x in 0..32 {
-                    ui.label(format!("{x}"));
+                ui.add_space(
+                    (ui.available_width() - (Self::BUTTON_IMAGE_SCALE.x + 14.0) * 4.0).max(0.0),
+                );
+
+                Self::draw_button_image(ui, Self::IMAGE_COG);
+                Self::draw_button_image(ui, Self::IMAGE_SEARCH);
+                Self::draw_button_image(ui, Self::IMAGE_STAR_MESSAGE);
+
+                let mut panel = app.layout.panel_user;
+
+                if Self::draw_selectable(ui, &mut panel, true, Self::IMAGE_USER_SIDE, "").clicked()
+                {
+                    app.layout.panel_user = !app.layout.panel_user;
                 }
             });
+
+            ui.separator();
+
+            let height = ui.available_height() - 77.0;
+
+            egui::ScrollArea::vertical()
+                .id_salt("scroll_chat")
+                .auto_shrink([false, false])
+                .stick_to_bottom(true)
+                .max_height(height)
+                .show(ui, |ui| {
+                    for (i, message) in &channel.message {
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                egui::Image::new(Self::IMAGE_TEST)
+                                    .fit_to_exact_size(Self::BUTTON_IMAGE_SCALE),
+                            );
+
+                            ui.vertical(|ui| {
+                                let account = message.account(&client.server);
+
+                                egui::Frame::group(ui.style()).show(ui, |ui| {
+                                    ui.label(RichText::new(&account.name_nick).strong());
+
+                                    match &message.kind {
+                                        MessageKind::Text(text) => {
+                                            ui.label(text);
+                                        }
+                                        _ => {}
+                                    };
+                                });
+                            });
+                        });
+                    }
+                });
+
+            ui.label("");
+
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                Self::draw_button_image(ui, Self::IMAGE_PLUS);
+
+                ui.add_sized(
+                    [
+                        (ui.available_width() - (Self::BUTTON_IMAGE_SCALE.x + 16.0) * 3.0).max(0.0),
+                        Self::BUTTON_IMAGE_SCALE.y,
+                    ],
+                    egui::TextEdit::singleline(&mut app.layout.entry_text)
+                        .font(FontId::proportional(Self::BUTTON_IMAGE_SCALE.y * 0.5))
+                        .vertical_align(egui::Align::Center),
+                );
+
+                Self::draw_button_image(ui, Self::IMAGE_STICKER);
+                Self::draw_button_image(ui, Self::IMAGE_EMOTE);
+
+                if Self::draw_button_image(ui, Self::IMAGE_SEND).clicked() {
+                    client.send(CommandClient::Message(
+                        index as u64,
+                        MessageKind::Text(app.layout.entry_text.clone()),
+                    ));
+                    app.layout.entry_text.clear();
+                }
+            });
+        }
     }
 
     fn draw_chat_account(app: &mut App, ui: &mut egui::Ui) {
@@ -141,9 +252,7 @@ impl Layout {
     }
 
     fn draw_picker_l(app: &mut App, ui: &mut egui::Ui) {
-        if Self::draw_button_image(ui, Self::IMAGE_LOGO).clicked() {
-            app.layout.index_server = None;
-        }
+        Self::draw_selectable(ui, &mut app.layout.index_server, None, Self::IMAGE_LOGO, "");
 
         ui.add_sized(
             [Self::BUTTON_IMAGE_SCALE.x + 8.0, 0.0],
@@ -153,10 +262,18 @@ impl Layout {
         egui::ScrollArea::vertical()
             .id_salt("scroll_picker_l")
             .show(ui, |ui| {
-                for (i, server) in app.client.client.iter().enumerate() {
-                    if Self::draw_button_image(ui, Self::IMAGE_LOGO).clicked() {
-                        app.layout.index_server = Some(i);
-                    }
+                for (i, client) in app.client.client.iter().enumerate() {
+                    ui.add_enabled_ui(client.ready, |ui| {
+                        Self::draw_selectable(
+                            ui,
+                            &mut app.layout.index_server,
+                            Some(i),
+                            Self::IMAGE_LOGO,
+                            "",
+                        );
+                    });
+
+                    ui.add_space(2.0);
                 }
 
                 if Self::draw_button_image(ui, Self::IMAGE_PLUS).clicked() {
@@ -173,9 +290,13 @@ impl Layout {
             Color32::TRANSPARENT
         };
 
-        if Self::draw_account(ui).clicked() {
-            app.layout.index_account = None;
-        }
+        Self::draw_selectable(
+            ui,
+            &mut app.layout.index_account,
+            None,
+            Self::IMAGE_USER_FRIEND,
+            "Friend List",
+        );
 
         ui.separator();
 
@@ -195,75 +316,80 @@ impl Layout {
                         Color32::TRANSPARENT
                     };
 
-                    if Self::draw_account(ui).clicked() {
-                        app.layout.index_account = Some(x);
-                    }
+                    Self::draw_selectable(
+                        ui,
+                        &mut app.layout.index_account,
+                        Some(x),
+                        Self::IMAGE_USER,
+                        &format!("{x}"),
+                    );
                 }
             });
     }
 
+    fn allocate_size<F: FnMut(&mut egui::Ui)>(ui: &mut egui::Ui, width: f32, call: F) {
+        ui.allocate_ui_with_layout(
+            egui::vec2(width, ui.spacing().interact_size.y),
+            egui::Layout::left_to_right(egui::Align::Center),
+            call,
+        );
+    }
+
     fn draw_picker_r_channel(app: &mut App, ui: &mut egui::Ui) {
+        let client = &app.client.client[app.layout.index_server.unwrap()];
+        let width = ui.available_width() - Self::BUTTON_IMAGE_SCALE.x - 16.0;
+
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.label("Server Name");
-                ui.label("Server Info");
+                ui.add_space(Self::BUTTON_IMAGE_SCALE.y * 0.5 - 8.0);
+                Self::allocate_size(ui, width, |ui| {
+                    ui.vertical(|ui| {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new("foobarbazfoobarbazfoobarbazfoobarbaz").strong(),
+                            )
+                            .truncate(),
+                        );
+                    });
+                });
             });
 
-            Self::draw_button_image(ui, Self::IMAGE_SEARCH);
+            ui.add_space(ui.available_width() - Self::BUTTON_IMAGE_SCALE.x - 8.0);
+
+            Self::draw_button_image(ui, Self::IMAGE_COG);
         });
 
         ui.separator();
 
         egui::ScrollArea::vertical()
             .id_salt("scroll_picker_r")
+            .auto_shrink([false, false])
             .show(ui, |ui| {
-                for x in 0..32 {
-                    let select = if let Some(i) = app.layout.index_account {
-                        x == i
+                for (i, channel) in &client.server.channel {
+                    let select = if let Some(index) = app.layout.index_channel {
+                        (index as u64) == *i
                     } else {
                         false
                     };
-                    let select = if select {
-                        Color32::DARK_BLUE
-                    } else {
-                        Color32::TRANSPARENT
-                    };
 
-                    ui.button("channel");
+                    if ui
+                        .add_sized(
+                            [ui.available_width(), 0.0],
+                            egui::Button::new(&channel.name).selected(select),
+                        )
+                        .clicked()
+                    {
+                        app.layout.index_channel = Some(*i as usize);
+                    }
                 }
             });
     }
 
-    fn draw_setup(app: &mut App, ui: &mut egui::Ui) {
+    #[rustfmt::skip]
+    fn draw_friend_list(app: &mut App, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            Self::draw_selectable(
-                ui,
-                &mut app.layout.index_setup,
-                SetupIndex::Account,
-                Self::IMAGE_USER,
-                "Account",
-            );
-            Self::draw_selectable(
-                ui,
-                &mut app.layout.index_setup,
-                SetupIndex::Window,
-                Self::IMAGE_WINDOW,
-                "Window",
-            );
-            Self::draw_selectable(
-                ui,
-                &mut app.layout.index_setup,
-                SetupIndex::Notify,
-                Self::IMAGE_NOTIFY,
-                "Notify",
-            );
-            Self::draw_selectable(
-                ui,
-                &mut app.layout.index_setup,
-                SetupIndex::Input,
-                Self::IMAGE_INPUT,
-                "Input",
-            );
+            Self::draw_selectable(ui, &mut app.layout.index_friend, FriendIndex::Online, Self::IMAGE_USER_ONLINE, "Online");
+            Self::draw_selectable(ui, &mut app.layout.index_friend, FriendIndex::All,  Self::IMAGE_USER,          "All");
         });
 
         ui.separator();
@@ -273,39 +399,123 @@ impl Layout {
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .max_height(h)
-            .show(ui, |ui| match app.layout.index_setup {
-                SetupIndex::Account => Self::draw_setup_account(app, ui),
-                SetupIndex::Window => Self::draw_setup_window(app, ui),
-                SetupIndex::Notify => Self::draw_setup_notify(app, ui),
-                SetupIndex::Input => Self::draw_setup_input(app, ui),
+            .show(ui, |ui| match app.layout.index_friend {
+                FriendIndex::Online => {},
+                FriendIndex::All    => {},
             });
 
         ui.separator();
 
         ui.horizontal(|ui| {
-            if Self::draw_button_image_label(ui, Self::IMAGE_APPLY, "Apply").clicked() {
-                app.user = app.layout.setup_user.clone();
+            if Self::draw_button_image_label(ui, Self::IMAGE_USER_ADD, "Add Friend").clicked() {
             }
-            if Self::draw_button_image_label(ui, Self::IMAGE_RESET, "Reset").clicked() {
-                app.layout.setup_user = app.user.clone();
+            if Self::draw_button_image_label(ui, Self::IMAGE_USER_CODE, "Show Friend Code").clicked() {
             }
         });
     }
 
     fn draw_setup_account(app: &mut App, ui: &mut egui::Ui) {
+        ui.label("User Icon");
+
+        if app.user.icon.is_some() {
+            ui.add(egui::Image::new(Self::IMAGE_TEST).fit_to_exact_size([96.0, 96.0].into()));
+            ui.horizontal(|ui| {
+                ui.button("Apply Icon");
+                ui.button("Clear Icon");
+            });
+        } else {
+            ui.add(egui::Image::new(Self::IMAGE_TEST).fit_to_exact_size([96.0, 96.0].into()));
+            ui.horizontal(|ui| {
+                ui.button("Apply Icon");
+            });
+        }
+
         Self::draw_edit_mono(ui, "Nick Name", &mut app.layout.setup_user.name_nick);
         Self::draw_edit_mono(ui, "User Name", &mut app.layout.setup_user.name_user);
         Self::draw_edit_multi(ui, "User Info", &mut app.layout.setup_user.info);
+        ui.checkbox(&mut app.user.notify_push, "Send Read Indicator");
+        ui.checkbox(&mut app.user.notify_push, "Send Type Indicator");
+        ui.button("Delete All Account Data");
+        // TO-DO auto-delete picker
     }
 
-    fn draw_setup_window(app: &mut App, ui: &mut egui::Ui) {}
+    fn draw_setup_window(app: &mut App, ui: &mut egui::Ui) {
+        ui.label("Zoom Factor");
+        let zoom = ui.add(egui::Slider::new(&mut app.user.zoom, 0.5..=2.0));
 
-    fn draw_setup_notify(app: &mut App, ui: &mut egui::Ui) {}
+        if zoom.drag_stopped() {
+            ui.set_zoom_factor(app.user.zoom);
+        }
 
-    fn draw_setup_input(app: &mut App, ui: &mut egui::Ui) {}
+        ui.checkbox(&mut app.user.tray_show, "Minimize To Tray");
+        ui.checkbox(&mut app.user.tray_show, "Show Message Link Embed");
+        ui.checkbox(&mut app.user.tray_show, "Show Message File Embed");
+        ui.checkbox(&mut app.user.tray_show, "Always Show Hidden Text");
+        ui.checkbox(&mut app.user.tray_show, "Compact Message Appearance");
+        // TO-DO language picker
+    }
+
+    fn draw_setup_notify(app: &mut App, ui: &mut egui::Ui) {
+        ui.checkbox(&mut app.user.notify_push, "Push Notification");
+        ui.checkbox(&mut app.user.notify_tray, "Tray Notification");
+        ui.checkbox(&mut app.user.notify_sound, "Sound Notification");
+    }
+
+    fn draw_setup_input(app: &mut App, ui: &mut egui::Ui) {
+        ui.label("Audio Input Device");
+        ui.label("Server Navigation (Lower)");
+        ui.label("Server Navigation (Upper)");
+        ui.label("Channel Navigation (Lower)");
+        ui.label("Channel Navigation (Upper)");
+        ui.label("Toggle Quick-Search");
+        ui.label("Edit Last Message");
+    }
+
+    #[rustfmt::skip]
+    fn modal_setup(app: &mut App, ui: &mut egui::Ui) {
+        egui::Modal::new("modal_setup".into()).show(ui, |ui| {
+            ui.set_min_size([1024.0 - 64.0, 768.0 - 64.0].into());
+
+            ui.horizontal(|ui| {
+                Self::draw_selectable(ui, &mut app.layout.index_setup, SetupIndex::Account, Self::IMAGE_USER,   "Account");
+                Self::draw_selectable(ui, &mut app.layout.index_setup, SetupIndex::Window,  Self::IMAGE_WINDOW, "Window");
+                Self::draw_selectable(ui, &mut app.layout.index_setup, SetupIndex::Notify,  Self::IMAGE_NOTIFY, "Notify");
+                Self::draw_selectable(ui, &mut app.layout.index_setup, SetupIndex::Input,   Self::IMAGE_INPUT,  "Input");
+            });
+
+            ui.separator();
+
+            let h = ui.available_height() - 56.0;
+
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .max_height(h)
+                .show(ui, |ui| match app.layout.index_setup {
+                    SetupIndex::Account => Self::draw_setup_account(app, ui),
+                    SetupIndex::Window  => Self::draw_setup_window(app, ui),
+                    SetupIndex::Notify  => Self::draw_setup_notify(app, ui),
+                    SetupIndex::Input   => Self::draw_setup_input(app, ui),
+                });
+
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                if Self::draw_button_image_label(ui, Self::IMAGE_APPLY, "Apply").clicked() {
+                    app.user = app.layout.setup_user.clone();
+                    app.layout.modal = None;
+                }
+                if Self::draw_button_image_label(ui, Self::IMAGE_RESET, "Reset").clicked() {
+                    app.layout.setup_user = app.user.clone();
+                }
+                if Self::draw_button_image_label(ui, Self::IMAGE_RESET, "Close").clicked() {
+                    app.layout.modal = None;
+                }
+            });
+        });
+    }
 
     fn modal_server(app: &mut App, ui: &mut egui::Ui) {
-        egui::Modal::new("modal".into()).show(ui, |ui| {
+        egui::Modal::new("modal_server".into()).show(ui, |ui| {
             ui.heading("Join Server");
             ui.separator();
 
@@ -333,11 +543,29 @@ impl Layout {
 
     //================================================================
 
-    fn draw_account(ui: &mut egui::Ui) -> Response {
-        ui.button((
-            egui::Image::new(Self::IMAGE_TEST).fit_to_exact_size([32.0, 32.0].into()),
-            "lux",
-        ))
+    fn draw_account(ui: &mut egui::Ui) -> (bool, bool) {
+        let mut account = false;
+        let mut cog = false;
+
+        ui.horizontal(|ui| {
+            account = ui
+                .add_sized(
+                    [
+                        ui.available_width() - Self::BUTTON_IMAGE_SCALE.x - 16.0,
+                        Self::BUTTON_IMAGE_SCALE.y,
+                    ],
+                    egui::Button::new((
+                        egui::Image::new(Self::IMAGE_TEST)
+                            .fit_to_exact_size(Self::BUTTON_IMAGE_SCALE),
+                        "lux",
+                    )),
+                )
+                .clicked();
+
+            cog = Self::draw_button_image(ui, Self::IMAGE_COG).clicked();
+        });
+
+        (account, cog)
     }
 
     fn draw_selectable<V: PartialEq>(
@@ -346,9 +574,14 @@ impl Layout {
         select: V,
         image: ImageSource,
         text: &str,
-    ) {
+    ) -> Response {
         let image = egui::Image::new(image).fit_to_exact_size(Self::BUTTON_IMAGE_SCALE);
-        ui.selectable_value(current, select, (image, text));
+
+        if text.is_empty() {
+            ui.selectable_value(current, select, image)
+        } else {
+            ui.selectable_value(current, select, (image, text))
+        }
     }
 
     fn draw_pop_up<F: FnOnce(&mut egui::Ui)>(
