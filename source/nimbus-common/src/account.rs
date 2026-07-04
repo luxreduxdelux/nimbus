@@ -50,20 +50,15 @@ pub struct AccountConnect {
     pub icon: Option<Vec<u8>>,
 }
 
-pub enum NickError {
-    Empty,
-    Length,
-}
-pub enum UserError {
-    Empty,
-    Length,
-    InvalidASCII,
-}
-pub enum InfoError {
-    Length,
-}
-pub enum IconError {
-    Length,
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AccountError {
+    NickEmpty,
+    NickLength,
+    NameEmpty,
+    NameLength,
+    NameInvalid,
+    InfoLength,
+    IconLength,
 }
 
 impl AccountConnect {
@@ -72,54 +67,56 @@ impl AccountConnect {
     pub const LIMIT_USER_INFO: usize = 128;
     pub const LIMIT_USER_ICON: usize = 2_000_000;
 
-    pub fn is_valid(&self) -> bool {
-        Self::is_valid_nick(&self.name_nick).is_ok()
-            && Self::is_valid_user(&self.name_user).is_ok()
-            && Self::is_valid_info(&self.info).is_ok()
-            && Self::is_valid_icon(&self.icon).is_ok()
+    pub fn is_valid(&self) -> Result<(), AccountError> {
+        Self::is_valid_nick(&self.name_nick)?;
+        Self::is_valid_name(&self.name_user)?;
+        Self::is_valid_info(&self.info)?;
+        Self::is_valid_icon(&self.icon)?;
+
+        Ok(())
     }
 
-    pub fn is_valid_nick(name: &str) -> Result<(), NickError> {
+    pub fn is_valid_nick(name: &str) -> Result<(), AccountError> {
         if name.is_empty() {
-            return Err(NickError::Empty);
+            return Err(AccountError::NickEmpty);
         }
 
         if name.len() > Self::LIMIT_NICK_NAME {
-            return Err(NickError::Length);
+            return Err(AccountError::NickLength);
         }
 
         Ok(())
     }
 
-    pub fn is_valid_user(user: &str) -> Result<(), UserError> {
+    pub fn is_valid_name(user: &str) -> Result<(), AccountError> {
         if user.is_empty() {
-            return Err(UserError::Empty);
+            return Err(AccountError::NameEmpty);
         }
 
         if user.len() > Self::LIMIT_USER_NAME {
-            return Err(UserError::Length);
+            return Err(AccountError::NameLength);
         }
 
         if !user.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-            return Err(UserError::InvalidASCII);
+            return Err(AccountError::NameInvalid);
         }
 
         Ok(())
     }
 
-    pub fn is_valid_info(info: &str) -> Result<(), InfoError> {
+    pub fn is_valid_info(info: &str) -> Result<(), AccountError> {
         if info.len() > Self::LIMIT_USER_INFO {
-            return Err(InfoError::Length);
+            return Err(AccountError::InfoLength);
         }
 
         Ok(())
     }
 
-    pub fn is_valid_icon(icon: &Option<Vec<u8>>) -> Result<(), IconError> {
-        if let Some(icon) = icon {
-            if icon.len() > Self::LIMIT_USER_ICON {
-                return Err(IconError::Length);
-            }
+    pub fn is_valid_icon(icon: &Option<Vec<u8>>) -> Result<(), AccountError> {
+        if let Some(icon) = icon
+            && icon.len() > Self::LIMIT_USER_ICON
+        {
+            return Err(AccountError::IconLength);
         }
 
         Ok(())

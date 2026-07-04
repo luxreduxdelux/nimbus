@@ -22,6 +22,7 @@ pub enum CommandClient {
     Nonce(Signature),
 
     Message(ChannelID, MessageKind),
+    MessageReply(ChannelID, MessageID, MessageKind),
     MessageReact(ChannelID, MessageID),
     MessageStar(ChannelID, MessageID),
     MessageEdit(ChannelID, MessageID, Message),
@@ -121,19 +122,13 @@ impl CommandServer {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Error {
-    Connect,
-    Account,
-    Message,
+    Connect(ConnectError),
+    Account(AccountError),
+    Message(MessageError),
 }
 
-impl Display for Error {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let string = match self {
-            Error::Connect => "Connect error",
-            Error::Account => "Account error",
-            Error::Message => "Message error",
-        };
-
-        formatter.write_str(string)
-    }
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ConnectError {
+    TimeOut,
+    Nonce,
 }

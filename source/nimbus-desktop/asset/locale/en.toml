@@ -1,0 +1,69 @@
+[general]
+join   = "Join"
+accept = "Accept"
+cancel = "Cancel"
+apply  = "Apply"
+reset  = "Reset"
+close  = "Close"
+error  = "Error"
+all    = "All"
+
+[server]
+join    = "Join Server"
+address = "IP Address"
+
+[friend]
+list = "Friend List"
+add  = "Add Friend"
+code = "Friend Code"
+
+[status]
+online  = "Online"
+away    = "Away"
+busy    = "Busy"
+offline = "Offline"
+
+[message]
+error   = "This message or account does not exist."
+reply   = "Reply"
+emote   = "Emote"
+edit    = "Edit"
+star    = "Star"
+file    = "File"
+poll    = "Poll"
+sticker = "Sticker"
+delete  = "Delete"
+
+[setup_account]
+user_icon       = "User Icon"
+user_icon_apply = "Apply Icon"
+user_icon_clear = "Clear Icon"
+nick_name       = "Nick Name"
+user_name       = "User Name"
+user_info       = "User Info"
+indicator_read  = "Send Read Indicator"
+indicator_type  = "Send Type Indicator"
+indicator_seen  = "Show Last Seen Indicator"
+
+[setup_window]
+zoom            = "Zoom Factor"
+tray            = "Minimize To Tray"
+embed_link      = "Show Message Link Embed"
+embed_file      = "Show Message File Embed"
+show_hidden     = "Always Show Hidden Text"
+message_compact = "Compact Message Appearance"
+language        = "Language"
+
+[setup_notify]
+push  = "Push Notification"
+tray  = "Tray Notification"
+sound = "Sound Notification"
+
+[setup_input]
+audio_device  = "Audio Input Device"
+server_lower  = "Server Navigation (Lower)"
+server_upper  = "Server Navigation (Upper)"
+channel_lower = "Channel Navigation (Lower)"
+channel_upper = "Channel Navigation (Upper)"
+toggle_quick  = "Toggle Quick-Search"
+edit_message  = "Edit Last Message"

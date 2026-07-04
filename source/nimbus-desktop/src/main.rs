@@ -5,7 +5,10 @@ mod user;
 
 //================================================================
 
-use client::common::markdown::Token;
+rust_i18n::i18n!("asset/locale");
+//use nimbus_client::nimbus_common::markdown::Token;
+
+//================================================================
 
 use crate::app::*;
 
@@ -13,11 +16,15 @@ use crate::app::*;
 
 #[tokio::main]
 async fn main() -> eframe::Result {
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
+
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../asset/icon.png")).unwrap();
 
     let option = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1280.0, 800.0])
+            .with_inner_size([1024.0, 768.0])
             .with_min_inner_size([1024.0, 768.0])
             .with_icon(std::sync::Arc::new(icon)),
         centered: true,

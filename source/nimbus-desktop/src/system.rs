@@ -31,7 +31,7 @@ impl System {
         let exit_t = exit_m.clone();
         let mut tray = false;
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(target_os = "windows"))]
         if user.tray_show {
             tray = true;
 

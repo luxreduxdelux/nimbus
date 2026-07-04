@@ -1,4 +1,4 @@
-use std::str::Chars;
+use std::{iter::Enumerate, str::Chars};
 
 //================================================================
 
@@ -38,6 +38,29 @@ pub enum Token {
     Quote(String),
 }
 
+impl Token {
+    pub fn kind(&self) -> TokenKind {
+        match self {
+            Token::Text(_) => TokenKind::Text,
+            Token::Italic(_) => TokenKind::Italic,
+            Token::Bold(_) => TokenKind::Bold,
+            Token::BoldItalic(_) => TokenKind::BoldItalic,
+            Token::Account(_) => TokenKind::Account,
+            Token::Channel(_) => TokenKind::Channel,
+            Token::Emote(_) => TokenKind::Emote,
+            Token::Hidden(_) => TokenKind::Hidden,
+            Token::HeaderA(_) => TokenKind::HeaderA,
+            Token::HeaderB(_) => TokenKind::HeaderB,
+            Token::HeaderC(_) => TokenKind::HeaderC,
+            Token::SubText(_) => TokenKind::SubText,
+            Token::Link(_, _) => TokenKind::Link,
+            Token::CodeA(_) => TokenKind::CodeA,
+            Token::CodeB(_) => TokenKind::CodeB,
+            Token::Quote(_) => TokenKind::Quote,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
     Text,
@@ -59,13 +82,14 @@ pub enum TokenKind {
 }
 
 impl Token {
-    pub fn parse(text: &str) -> Vec<Token> {
+    pub fn parse(text: &str) -> (Vec<Token>, TokenKind, usize) {
         let mut which = TokenKind::Text;
+        let mut index = 0;
         let mut result = Vec::new();
         let mut buffer = Buffer::default();
-        let mut string = text.chars();
+        let mut string = text.chars().enumerate();
 
-        while let Some(character) = string.next() {
+        while let Some((i, character)) = string.next() {
             match character {
                 '*' => {
                     let bold = Self::peek(string.clone(), 0, '*');
@@ -80,15 +104,16 @@ impl Token {
 
                     if which_local == which {
                         which = TokenKind::Text;
+                        index = i;
 
                         buffer.push(character);
                         match which_local {
                             TokenKind::Bold => {
-                                buffer.push(string.next().unwrap());
+                                buffer.push(string.next().unwrap().1);
                             }
                             TokenKind::BoldItalic => {
-                                buffer.push(string.next().unwrap());
-                                buffer.push(string.next().unwrap());
+                                buffer.push(string.next().unwrap().1);
+                                buffer.push(string.next().unwrap().1);
                             }
                             _ => {}
                         }
@@ -96,6 +121,7 @@ impl Token {
                         result.push(Self::from_string(buffer.clear()))
                     } else {
                         which = which_local;
+                        index = i;
 
                         if !buffer.is_empty() {
                             result.push(Self::from_string(buffer.clear()));
@@ -104,11 +130,11 @@ impl Token {
                         buffer.push(character);
                         match which_local {
                             TokenKind::Bold => {
-                                buffer.push(string.next().unwrap());
+                                buffer.push(string.next().unwrap().1);
                             }
                             TokenKind::BoldItalic => {
-                                buffer.push(string.next().unwrap());
-                                buffer.push(string.next().unwrap());
+                                buffer.push(string.next().unwrap().1);
+                                buffer.push(string.next().unwrap().1);
                             }
                             _ => {}
                         }
@@ -120,6 +146,7 @@ impl Token {
                     }
 
                     which = TokenKind::Account;
+                    index = i;
                     buffer.push(character);
                 }
                 '#' => {
@@ -128,16 +155,19 @@ impl Token {
                     }
 
                     which = TokenKind::Channel;
+                    index = i;
                     buffer.push(character);
                 }
                 ':' => {
                     if which == TokenKind::Emote {
                         which = TokenKind::Text;
+                        index = i;
 
                         buffer.push(character);
                         result.push(Self::from_string(buffer.clear()))
                     } else {
                         which = TokenKind::Emote;
+                        index = i;
 
                         if !buffer.is_empty() {
                             result.push(Self::from_string(buffer.clear()));
@@ -152,20 +182,22 @@ impl Token {
                     if next {
                         if which == TokenKind::Hidden {
                             which = TokenKind::Text;
+                            index = i;
 
                             buffer.push(character);
-                            buffer.push(string.next().unwrap());
+                            buffer.push(string.next().unwrap().1);
 
                             result.push(Self::from_string(buffer.clear()))
                         } else {
                             which = TokenKind::Hidden;
+                            index = i;
 
                             if !buffer.is_empty() {
                                 result.push(Self::from_string(buffer.clear()));
                             }
 
                             buffer.push(character);
-                            buffer.push(string.next().unwrap());
+                            buffer.push(string.next().unwrap().1);
                         }
                     } else {
                         buffer.push(character);
@@ -178,6 +210,7 @@ impl Token {
                             if !character.is_alphabetic() {
                                 result.push(Self::from_string(buffer.clear()));
                                 which = TokenKind::Text;
+                                index = i;
                                 buffer.push(character);
                             } else {
                                 buffer.push(character);
@@ -186,6 +219,7 @@ impl Token {
                         TokenKind::Emote => {
                             if !character.is_alphabetic() {
                                 which = TokenKind::Text;
+                                index = i;
                             }
 
                             buffer.push(character);
@@ -202,7 +236,7 @@ impl Token {
             result.push(Self::from_string(buffer.clear()));
         }
 
-        result
+        (result, which, index)
     }
 
     pub fn from_string(text: String) -> Token {
@@ -237,8 +271,8 @@ impl Token {
         }
     }
 
-    fn peek(mut string: Chars<'_>, index: usize, character: char) -> bool {
-        if let Some(c) = string.nth(index)
+    fn peek(mut string: Enumerate<Chars<'_>>, index: usize, character: char) -> bool {
+        if let Some((_, c)) = string.nth(index)
             && c == character
         {
             true

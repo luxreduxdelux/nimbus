@@ -1,11 +1,12 @@
+use std::time::Duration;
+
 use ed25519_dalek::Signer;
 use ed25519_dalek::SigningKey;
-use std::sync::mpsc;
 use tokio::net::TcpStream;
 
 //================================================================
 
-use common::prelude::*;
+use nimbus_common::prelude::*;
 
 //================================================================
 
@@ -94,50 +95,55 @@ impl Client {
 //================================================================
 
 struct Thread {
-    tx: mpsc::Sender<CommandClient>,
-    rx: mpsc::Receiver<CommandServer>,
+    tx: tokio::sync::mpsc::UnboundedSender<CommandClient>,
+    rx: tokio::sync::mpsc::UnboundedReceiver<CommandServer>,
 }
 
 impl Thread {
     fn new(address: String, account: AccountConnect) -> Self {
-        let (tx_s, rx) = mpsc::channel::<CommandServer>();
-        let (tx, rx_s) = mpsc::channel::<CommandClient>();
+        let (tx_s, rx) = tokio::sync::mpsc::unbounded_channel::<CommandServer>();
+        let (tx, mut rx_s) = tokio::sync::mpsc::unbounded_channel::<CommandClient>();
 
         tokio::spawn(async move {
-            let socket = TcpStream::connect(format!("{address}:8080")).await;
+            let socket = tokio::time::timeout(
+                Duration::from_secs(10),
+                TcpStream::connect(format!("{address}:8080")),
+            )
+            .await;
 
-            if let Ok(mut socket) = socket {
-                CommandClient::Enter(account).write(&mut socket).await;
+            if let Ok(socket) = socket {
+                if let Ok(mut socket) = socket {
+                    CommandClient::Enter(account).write(&mut socket).await;
 
-                println!("[CLIENT] Connect: {socket:#?}");
+                    println!("[CLIENT] Connect: {socket:#?}");
 
-                loop {
-                    tokio::select! {
-                        // Server -> client command.
+                    loop {
+                        tokio::select! {
+                        Some(command) = rx_s.recv() => {
+                            command.write(&mut socket).await;
+                        }
                         result = CommandServer::read(&mut socket) => {
                             match result {
-                                Ok(command) => {
-                                    tx_s.send(command).unwrap();
+                                    Ok(command) => {
+                                        tx_s.send(command).unwrap();
+                                    }
+                                    Err(err) => {
+                                        tx_s.send(CommandServer::Leave);
+                                        eprintln!("read error: {err}");
+                                        break;
+                                    }
                                 }
-                                Err(err) => {
-                                    tx_s.send(CommandServer::Leave);
-                                    eprintln!("read error: {err}");
-                                    break;
-                                }
-                            }
-                        }
-
-                        // Client -> server command.
-                        _ = tokio::task::yield_now() => {
-                            while let Ok(command) = rx_s.try_recv() {
-                                command.write(&mut socket).await;
                             }
                         }
                     }
+                } else if let Err(error) = socket {
+                    println!("{error}, {address}");
+                    // TO-DO not actually a time-out error, replace with native socket error?
+                    tx_s.send(CommandServer::Error(Error::Connect(ConnectError::TimeOut)));
                 }
-            } else if let Err(error) = socket {
-                println!("{error}, {address}");
-                tx_s.send(CommandServer::Error(Error::Connect));
+            } else {
+                println!("time-out, {address}");
+                tx_s.send(CommandServer::Error(Error::Connect(ConnectError::TimeOut)));
             }
         });
 
