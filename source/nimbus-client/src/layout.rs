@@ -9,7 +9,7 @@ use rust_i18n::t;
 
 use crate::app::*;
 use crate::user::*;
-use nimbus_client::prelude::*;
+use nimbus_protocol::prelude::*;
 
 //================================================================
 

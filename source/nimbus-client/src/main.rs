@@ -6,7 +6,7 @@ mod user;
 //================================================================
 
 rust_i18n::i18n!("asset/locale");
-//use nimbus_client::nimbus_common::markdown::Token;
+//use nimbus_protocol::markdown::Token;
 
 //================================================================
 

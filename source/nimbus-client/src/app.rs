@@ -5,7 +5,7 @@ use egui::{self, FontFamily, FontId, TextStyle};
 use crate::layout::*;
 use crate::system::*;
 use crate::user::*;
-use nimbus_client::prelude::*;
+use nimbus_protocol::prelude::*;
 
 //================================================================
 

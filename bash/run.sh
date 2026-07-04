@@ -11,7 +11,7 @@ if ! kill -0 "$server_process" 2>/dev/null; then
     exit "$exit_code"
 fi
 
-RUSTFLAGS="-Awarnings" cargo run --bin nimbus-desktop
+RUSTFLAGS="-Awarnings" cargo run --bin nimbus-client
 
 kill "$server_process" 2>/dev/null
 wait "$server_process" 2>/dev/null

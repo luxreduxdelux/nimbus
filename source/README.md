@@ -1,8 +1,7 @@
 ## Index
 
-| Folder           | Info                                                |
-| ---------------- | --------------------------------------------------- |
-| `nimbus-client`  | Implementation of the client protocol.              |
-| `nimbus-common`  | Client/server protocol.                             |
-| `nimbus-desktop` | GUI desktop application using the `client` library. |
-| `nimbus-server`  | Implementation of the server protocol.              |
+| Folder             | Info                                                   |
+| ------------------ | ------------------------------------------------------ |
+| `nimbus-client`    | Binary implementation of the client protocol. GUI app. |
+| `nimbus-protocol`  | Client/server protocol.                                |
+| `nimbus-server`    | Binary implementation of the server protocol. CLI app. |

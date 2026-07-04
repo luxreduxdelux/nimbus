@@ -6,7 +6,7 @@ use tiny_skia::Pixmap;
 
 //================================================================
 
-use nimbus_client::nimbus_common::prelude::*;
+use nimbus_protocol::prelude::*;
 
 //================================================================
 

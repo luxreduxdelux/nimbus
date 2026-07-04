@@ -2,8 +2,7 @@
 resolver = "3"
 members = [
     "source/nimbus-client",
-    "source/nimbus-common",
-    "source/nimbus-desktop",
+    "source/nimbus-protocol",
     "source/nimbus-server"
 ]
 

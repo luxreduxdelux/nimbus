@@ -1,5 +1,5 @@
 use crate::client::*;
-use nimbus_common::command::*;
+use crate::command::*;
 
 //================================================================
 

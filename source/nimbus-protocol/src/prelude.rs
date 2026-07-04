@@ -1,6 +1,8 @@
 pub use crate::account::*;
 pub use crate::category::*;
 pub use crate::channel::*;
+pub use crate::client::*;
+pub use crate::client_multi::*;
 pub use crate::command::*;
 pub use crate::configuration::*;
 pub use crate::identifier::*;

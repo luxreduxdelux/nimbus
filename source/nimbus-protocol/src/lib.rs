@@ -1,6 +1,8 @@
 pub mod account;
 pub mod category;
 pub mod channel;
+pub mod client;
+pub mod client_multi;
 pub mod command;
 pub mod configuration;
 pub mod identifier;

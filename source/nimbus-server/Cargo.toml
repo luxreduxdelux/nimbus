@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio         = { version = "1.0",   features = ["full"]      }
-serde         = { version = "1.0",   features = ["derive"]    }
-bincode       = { version = "2.0",   features = ["serde"]     }
-ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
-rand          = { version = "0.8"    }
-igd           = { version = "0.12"   }
-anyhow        = { version = "1.0"    }
-nimbus-common = { path = "../nimbus-common" }
+tokio           = { version = "1.0",   features = ["full"]      }
+serde           = { version = "1.0",   features = ["derive"]    }
+bincode         = { version = "2.0",   features = ["serde"]     }
+ed25519-dalek   = { version = "2.2.0", features = ["rand_core"] }
+rand            = { version = "0.8"    }
+igd             = { version = "0.12"   }
+anyhow          = { version = "1.0"    }
+nimbus-protocol = { path = "../nimbus-protocol" }

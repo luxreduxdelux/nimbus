@@ -1900,10 +1900,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
 dependencies = [
  "cfg-if",
- "js-sys",
  "libc",
  "wasi",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -3102,40 +3100,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "ed25519-dalek",
- "getrandom 0.2.17",
- "nimbus-common",
- "serde",
- "tokio",
-]
-
-[[package]]
-name = "nimbus-common"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "chrono",
- "ed25519-dalek",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "nimbus-desktop"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
  "chrono",
  "eframe",
  "egui",
  "egui_extras",
  "gtk",
  "image 0.24.9",
- "nimbus-client",
+ "nimbus-protocol",
  "notify-rust",
  "qrcode",
  "resvg 0.44.0",
@@ -3150,6 +3121,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nimbus-protocol"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "chrono",
+ "ed25519-dalek",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "nimbus-server"
 version = "0.1.0"
 dependencies = [
@@ -3157,7 +3142,7 @@ dependencies = [
  "bincode",
  "ed25519-dalek",
  "igd",
- "nimbus-common",
+ "nimbus-protocol",
  "rand 0.8.6",
  "serde",
  "tokio",
