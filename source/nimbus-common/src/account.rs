@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 //================================================================
 
 use crate::channel::*;
+use crate::role::*;
 
 //================================================================
 
@@ -16,7 +17,9 @@ pub struct Account {
     pub name_user: String,
     pub info: String,
     pub icon: Option<Vec<u8>>,
+    pub role: Vec<RoleID>,
     pub index: AccountID,
+    // TO-DO make option? to signify we are not even in the server
     pub channel: ChannelID,
     pub activity: Option<AccountActivity>,
     pub presence: AccountPresence,
@@ -62,10 +65,10 @@ pub enum AccountError {
 }
 
 impl AccountConnect {
-    pub const LIMIT_NICK_NAME: usize = 32;
-    pub const LIMIT_USER_NAME: usize = 32;
-    pub const LIMIT_USER_INFO: usize = 128;
-    pub const LIMIT_USER_ICON: usize = 2_000_000;
+    pub const LIMIT_NICK_NAME: usize = 64;
+    pub const LIMIT_USER_NAME: usize = 64;
+    pub const LIMIT_USER_INFO: usize = 256;
+    pub const LIMIT_USER_ICON: usize = 1_000_000 * 2;
 
     pub fn is_valid(&self) -> Result<(), AccountError> {
         Self::is_valid_nick(&self.name_nick)?;
@@ -130,6 +133,7 @@ impl AccountConnect {
             name_user: self.name_user,
             info: self.info,
             icon: self.icon,
+            role: Default::default(),
             index,
             channel: Default::default(),
             activity: Default::default(),

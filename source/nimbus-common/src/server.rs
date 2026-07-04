@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use crate::account::*;
 use crate::category::*;
 use crate::channel::*;
+use crate::configuration::*;
 use crate::message::*;
 use crate::sticker::*;
 
@@ -13,12 +14,11 @@ use crate::sticker::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Server {
-    // TO-DO make private
+    pub version: u64,
     pub count_account: u64,
-    // TO-DO make private
     pub count_channel: u64,
-    // TO-DO make private
     pub count_sticker: u64,
+    pub configuration: Configuration,
     pub account_key: BTreeMap<AccountKey, AccountID>,
     pub account: BTreeMap<AccountID, Account>,
     pub channel: BTreeMap<ChannelID, Channel>,
@@ -165,9 +165,11 @@ impl Server {
 impl Default for Server {
     fn default() -> Self {
         let mut this = Self {
+            version: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
             count_account: Default::default(),
             count_channel: Default::default(),
             count_sticker: Default::default(),
+            configuration: Default::default(),
             account_key: Default::default(),
             account: Default::default(),
             channel: Default::default(),

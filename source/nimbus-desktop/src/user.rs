@@ -27,7 +27,7 @@ pub struct User {
 }
 
 impl User {
-    const PATH_FILE: &str = "user.data";
+    const PATH_FILE: &str = "client.data";
 
     pub fn generate_image_identifier(&self, ui: &egui::Context) -> TextureHandle {
         let code = serde_json::to_string(&self.identifier).unwrap();

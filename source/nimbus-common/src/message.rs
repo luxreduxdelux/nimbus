@@ -16,7 +16,7 @@ pub type MessageID = u64;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub channel: ChannelID,
-    pub account: AccountID,
+    pub account: Option<AccountID>,
     pub star: bool,
     pub kind: MessageKind,
     pub reply: Option<MessageID>,
@@ -25,12 +25,16 @@ pub struct Message {
 
 impl<'a> Message {
     pub fn account(&'a self, server: &'a Server) -> Option<&'a Account> {
-        server.account.get(&self.account)
+        if let Some(account) = &self.account {
+            server.account.get(account)
+        } else {
+            None
+        }
     }
 
     pub fn new(
         channel: ChannelID,
-        account: AccountID,
+        account: Option<AccountID>,
         kind: MessageKind,
         reply: Option<MessageID>,
     ) -> Self {
@@ -47,10 +51,18 @@ impl<'a> Message {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MessageKind {
+    System(MessageSystem),
     Text(String),
     File(String, Vec<u8>),
     Poll(Poll),
     Sticker(u64),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MessageSystem {
+    Enter(AccountID),
+    Leave(AccountID),
+    Star(MessageID),
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -59,81 +71,75 @@ pub enum MessageError {
     TextLength,
     FileEmpty,
     FileLength,
-    PollNameEmpty,
-    PollNameLength,
     PollChoiceEmpty,
     PollChoiceLength,
-    PollChoiceNameEmpty,
-    PollChoiceNameLength,
     PollInvalidCorrectIndex,
     StickerInvalidIndex,
 }
 
 impl MessageKind {
-    const TEXT_LIMIT_TEXT: usize = 256;
-    const FILE_LIMIT_DATA: usize = 1_000_000 * 10;
-    const POLL_LIMIT_TEXT: usize = 64;
-    const POLL_LIMIT_CHOICE: usize = 16;
-
     #[rustfmt::skip]
     pub fn is_valid(&self, server: &Server) -> Result<(), MessageError> {
         match self {
-            MessageKind::Text(text)       => Self::is_valid_text(text),
-            MessageKind::File(name, data) => Self::is_valid_file(name, data),
-            MessageKind::Poll(poll)       => Self::is_valid_poll(poll),
-            MessageKind::Sticker(index)   => Self::is_valid_sticker(index, server),
+            MessageKind::Text(text)       => Self::is_valid_text(server, text),
+            MessageKind::File(name, data) => Self::is_valid_file(server, name, data),
+            MessageKind::Poll(poll)       => Self::is_valid_poll(server, poll),
+            MessageKind::Sticker(index)   => Self::is_valid_sticker(server, index),
+            _ => Ok(())
         }
     }
 
-    pub fn is_valid_text(text: &str) -> Result<(), MessageError> {
+    pub fn is_valid_text(server: &Server, text: &str) -> Result<(), MessageError> {
         if text.is_empty() {
             return Err(MessageError::TextEmpty);
         }
 
-        if text.len() > Self::TEXT_LIMIT_TEXT {
+        if text.len() > server.configuration.limit_text_size {
             return Err(MessageError::TextLength);
         }
 
         Ok(())
     }
 
-    pub fn is_valid_file(name: &str, data: &[u8]) -> Result<(), MessageError> {
-        Self::is_valid_text(name)?;
+    pub fn is_valid_file(server: &Server, name: &str, data: &[u8]) -> Result<(), MessageError> {
+        Self::is_valid_text(server, name)?;
 
         if data.is_empty() {
             return Err(MessageError::FileEmpty);
         }
 
-        if data.len() > Self::FILE_LIMIT_DATA {
+        if data.len() > server.configuration.limit_file_size {
             return Err(MessageError::FileLength);
         }
 
         Ok(())
     }
 
-    pub fn is_valid_poll(poll: &Poll) -> Result<(), MessageError> {
-        if poll.name.is_empty() {
-            return Err(MessageError::PollNameEmpty);
-        }
-
-        if poll.name.len() > Self::POLL_LIMIT_TEXT {
-            return Err(MessageError::PollNameLength);
-        }
+    pub fn is_valid_poll(server: &Server, poll: &Poll) -> Result<(), MessageError> {
+        Self::is_valid_text(server, &poll.name)?;
 
         if poll.choice.is_empty() {
             return Err(MessageError::PollChoiceEmpty);
         }
 
-        if poll.choice.len() > Self::POLL_LIMIT_CHOICE {
+        if poll.choice.len() > server.configuration.limit_poll_size {
             return Err(MessageError::PollChoiceLength);
         }
 
-        // TO-DO rest
+        for choice in &poll.choice {
+            Self::is_valid_text(server, &choice.name)?;
+        }
+
+        if let Some(correct) = poll.correct
+            && correct > poll.choice.len()
+        {
+            return Err(MessageError::PollInvalidCorrectIndex);
+        }
 
         Ok(())
     }
 
-    pub fn is_valid_sticker(index: &StickerID, server: &Server) -> Result<(), MessageError> {
+    pub fn is_valid_sticker(server: &Server, index: &StickerID) -> Result<(), MessageError> {
         if !server.sticker.contains_key(index) {
             return Err(MessageError::StickerInvalidIndex);
         }

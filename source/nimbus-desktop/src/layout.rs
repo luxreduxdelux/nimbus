@@ -69,7 +69,10 @@ impl Layout {
     const IMAGE_INPUT: ImageSource<'_> = egui::include_image!("../asset/input.svg");
     const IMAGE_APPLY: ImageSource<'_> = egui::include_image!("../asset/apply.svg");
     const IMAGE_RESET: ImageSource<'_> = egui::include_image!("../asset/reset.svg");
+    const IMAGE_CLOSE: ImageSource<'_> = egui::include_image!("../asset/close.svg");
     const IMAGE_ERROR: ImageSource<'_> = egui::include_image!("../asset/error.svg");
+    const IMAGE_ENTER: ImageSource<'_> = egui::include_image!("../asset/enter.svg");
+    const IMAGE_LEAVE: ImageSource<'_> = egui::include_image!("../asset/leave.svg");
     const IMAGE_LOGO: ImageSource<'_> = egui::include_image!("../asset/logo.svg");
     const IMAGE_DOT: ImageSource<'_> = egui::include_image!("../asset/dot.svg");
     const IMAGE_PLUS: ImageSource<'_> = egui::include_image!("../asset/plus.svg");
@@ -151,8 +154,46 @@ impl Layout {
         }
     }
 
-    fn draw_message_in_line(ui: &mut egui::Ui, message: &Message) {
+    fn draw_image_label(ui: &mut egui::Ui, image: egui::Image, label: &str) {
+        ui.horizontal(|ui| {
+            ui.add(image);
+            ui.label(label);
+        });
+    }
+
+    fn draw_message_system(ui: &mut egui::Ui, message: &MessageSystem, server: &Server) {
+        match message {
+            MessageSystem::Enter(account) => {
+                if let Some(account) = server.account.get(account) {
+                    Self::draw_image_label(
+                        ui,
+                        Self::image(Self::IMAGE_ENTER, Vec2::splat(32.0)).tint(Color32::GREEN),
+                        &account.name_nick,
+                    );
+                }
+            }
+            MessageSystem::Leave(account) => {
+                if let Some(account) = server.account.get(account) {
+                    Self::draw_image_label(
+                        ui,
+                        Self::image(Self::IMAGE_LEAVE, Vec2::splat(32.0)).tint(Color32::RED),
+                        &account.name_nick,
+                    );
+                }
+            }
+            MessageSystem::Star(_) => {
+                Self::draw_image_label(
+                    ui,
+                    Self::image(Self::IMAGE_STAR_A, Vec2::splat(32.0)),
+                    "TO-DO",
+                );
+            }
+        }
+    }
+
+    fn draw_message_in_line(ui: &mut egui::Ui, message: &Message, server: &Server) {
         match &message.kind {
+            MessageKind::System(message) => Self::draw_message_system(ui, message, server),
             MessageKind::Text(text) => {
                 ui.label(RichText::new(text).italics());
             }
@@ -179,7 +220,7 @@ impl Layout {
                 && let Some(account) = message.account(server)
             {
                 ui.label(RichText::new(&account.name_nick).weak());
-                Self::draw_message_in_line(ui, message);
+                Self::draw_message_in_line(ui, message, server);
             } else {
                 ui.label(RichText::new(t!("message.error")).italics());
             }
@@ -238,15 +279,17 @@ impl Layout {
                 .max_height(height)
                 .show(ui, |ui| {
                     for (i, message) in &channel.message {
+                        let message_system = message.account.is_none();
+
                         ui.horizontal(|ui| {
-                            ui.add(
-                                egui::Image::new(Self::IMAGE_TEST)
-                                    .fit_to_exact_size(Self::BUTTON_IMAGE_SCALE),
-                            );
+                            if !message_system {
+                                ui.add(
+                                    egui::Image::new(Self::IMAGE_TEST)
+                                        .fit_to_exact_size(Self::BUTTON_IMAGE_SCALE),
+                                );
+                            }
 
                             ui.vertical(|ui| {
-                                let account = message.account(&client.server).unwrap();
-
                                 let response = egui::Frame::group(ui.style()).show(ui, |ui| {
                                     let available = ui.available_size();
 
@@ -254,7 +297,9 @@ impl Layout {
                                         ui.allocate_exact_size(available, egui::Sense::click());
 
                                     ui.allocate_ui_at_rect(rect, |ui| {
-                                        ui.label(RichText::new(&account.name_nick).strong());
+                                        if let Some(account) = message.account(&client.server) {
+                                            ui.label(RichText::new(&account.name_nick).strong());
+                                        }
 
                                         if let Some(reply) = message.reply {
                                             egui::Frame::group(ui.style()).show(ui, |ui| {
@@ -268,6 +313,13 @@ impl Layout {
                                         }
 
                                         match &message.kind {
+                                            MessageKind::System(message) => {
+                                                Self::draw_message_system(
+                                                    ui,
+                                                    message,
+                                                    &client.server,
+                                                );
+                                            }
                                             MessageKind::Text(text) => {
                                                 ui.label(text);
                                             }
@@ -292,6 +344,11 @@ impl Layout {
                                         ui,
                                         Self::IMAGE_EMOTE,
                                         &t!("message.emote"),
+                                    );
+                                    Self::draw_button_image_label(
+                                        ui,
+                                        Self::IMAGE_COPY,
+                                        &t!("message.copy"),
                                     );
                                     Self::draw_button_image_label(
                                         ui,
@@ -490,7 +547,7 @@ impl Layout {
                 }
 
                 if Self::draw_button_image(ui, Self::IMAGE_PLUS).clicked() {
-                    app.layout.modal = Some(Self::modal_server);
+                    app.layout.modal = Some(Self::modal_server_join);
                 }
             });
     }
@@ -567,7 +624,9 @@ impl Layout {
 
             ui.add_space(ui.available_width() - Self::BUTTON_IMAGE_SCALE.x - 8.0);
 
-            Self::draw_button_image(ui, Self::IMAGE_COG);
+            if Self::draw_button_image(ui, Self::IMAGE_COG).clicked() {
+                app.layout.modal = Some(Self::modal_server_setup);
+            }
         });
 
         ui.separator();
@@ -732,22 +791,22 @@ impl Layout {
             ui.separator();
 
             ui.horizontal(|ui| {
-                if Self::draw_button_image_label(ui, Self::IMAGE_APPLY, "Apply").clicked() {
+                if Self::draw_button_image_label(ui, Self::IMAGE_APPLY, &t!("general.apply")).clicked() {
                     app.user = app.layout.setup_user.clone();
                     app.layout.modal = None;
                 }
-                if Self::draw_button_image_label(ui, Self::IMAGE_RESET, "Reset").clicked() {
+                if Self::draw_button_image_label(ui, Self::IMAGE_RESET, &t!("general.reset")).clicked() {
                     app.layout.setup_user = app.user.clone();
                 }
-                if Self::draw_button_image_label(ui, Self::IMAGE_RESET, "Close").clicked() {
+                if Self::draw_button_image_label(ui, Self::IMAGE_CLOSE, &t!("general.close")).clicked() {
                     app.layout.modal = None;
                 }
             });
         });
     }
 
-    fn modal_server(app: &mut App, ui: &mut egui::Ui) {
-        egui::Modal::new("modal_server".into()).show(ui, |ui| {
+    fn modal_server_join(app: &mut App, ui: &mut egui::Ui) {
+        egui::Modal::new("modal_server_join".into()).show(ui, |ui| {
             ui.heading(t!("general.join"));
             ui.separator();
 
@@ -773,7 +832,32 @@ impl Layout {
         });
     }
 
+    fn modal_server_setup(app: &mut App, ui: &mut egui::Ui) {
+        let server = &app.client.client[app.layout.index_server.unwrap()].server;
+
+        egui::Modal::new("modal_setup".into()).show(ui, |ui| {
+            ui.set_min_size([1024.0 - 64.0, 768.0 - 64.0].into());
+
+            ui.label(format!(
+                "Message Text Size Limit: {}",
+                server.configuration.limit_text_size
+            ));
+            ui.label(format!(
+                "Message File Size Limit: {} MB",
+                server.configuration.limit_file_size / 1_000_000
+            ));
+            ui.label(format!(
+                "Message Poll Size Limit: {}",
+                server.configuration.limit_poll_size
+            ));
+        });
+    }
+
     //================================================================
+
+    fn image(image: ImageSource, size: Vec2) -> egui::Image {
+        egui::Image::new(image).fit_to_exact_size(size)
+    }
 
     fn draw_account_self(app: &App, ui: &mut egui::Ui) -> (bool, bool) {
         let mut account = false;
@@ -786,14 +870,7 @@ impl Layout {
                         (ui.available_width() - Self::BUTTON_IMAGE_SCALE.x - 16.0).max(0.0),
                         Self::BUTTON_IMAGE_SCALE.y,
                     ],
-                    egui::Button::new(
-                        egui::Image::new(Self::IMAGE_TEST)
-                            .fit_to_exact_size(Self::BUTTON_IMAGE_SCALE),
-                    ), //egui::Button::new((
-                       //    egui::Image::new(Self::IMAGE_TEST)
-                       //        .fit_to_exact_size(Self::BUTTON_IMAGE_SCALE),
-                       //    "lux",
-                       //)),
+                    egui::Button::new(Self::image(Self::IMAGE_TEST, Self::BUTTON_IMAGE_SCALE)),
                 )
                 .clicked();
 
@@ -812,7 +889,7 @@ impl Layout {
         image: ImageSource,
         text: &str,
     ) -> Response {
-        let image = egui::Image::new(image).fit_to_exact_size(Self::BUTTON_IMAGE_SCALE);
+        let image = Self::image(image, Self::BUTTON_IMAGE_SCALE);
 
         if text.is_empty() {
             ui.selectable_value(current, select, image)
@@ -837,14 +914,11 @@ impl Layout {
     }
 
     fn draw_button_image(ui: &mut egui::Ui, image: ImageSource) -> Response {
-        ui.button(egui::Image::new(image).fit_to_exact_size(Self::BUTTON_IMAGE_SCALE))
+        ui.button(Self::image(image, Self::BUTTON_IMAGE_SCALE))
     }
 
     fn draw_button_image_label(ui: &mut egui::Ui, image: ImageSource, label: &str) -> Response {
-        ui.button((
-            egui::Image::new(image).fit_to_exact_size(Self::BUTTON_IMAGE_SCALE),
-            label,
-        ))
+        ui.button((Self::image(image, Self::BUTTON_IMAGE_SCALE), label))
     }
 
     fn draw_edit_mono(ui: &mut egui::Ui, label: &str, value: &mut String) -> Response {

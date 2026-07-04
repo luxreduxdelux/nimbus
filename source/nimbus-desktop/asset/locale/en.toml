@@ -9,8 +9,15 @@ error  = "Error"
 all    = "All"
 
 [server]
-join    = "Join Server"
-address = "IP Address"
+join            = "Join Server"
+address         = "IP Address"
+name            = "Server Name"
+info            = "Server Info"
+icon            = "Server Icon"
+limit_text_size = "Message Text Size Limit"
+limit_file_size = "Message File Size Limit"
+limit_poll_size = "Message Poll Size Limit"
+connect_pending = "Connecting..."
 
 [friend]
 list = "Friend List"
@@ -27,12 +34,13 @@ offline = "Offline"
 error   = "This message or account does not exist."
 reply   = "Reply"
 emote   = "Emote"
+copy    = "Copy"
 edit    = "Edit"
 star    = "Star"
+delete  = "Delete"
 file    = "File"
 poll    = "Poll"
 sticker = "Sticker"
-delete  = "Delete"
 
 [setup_account]
 user_icon       = "User Icon"

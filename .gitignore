@@ -1,5 +1,5 @@
 /target
-user.data
-key.nimbus
+client.data
 server.data
 nimbus.sublime-workspace
+nimbus_*.zip

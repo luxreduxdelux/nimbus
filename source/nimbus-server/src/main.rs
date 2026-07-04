@@ -1,18 +1,17 @@
 use ed25519_dalek::Signature;
 use ed25519_dalek::VerifyingKey;
 use igd::Gateway;
+use igd::{PortMappingProtocol, search_gateway};
 use rand::RngCore;
 use rand::rngs::OsRng;
 use std::collections::HashMap;
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::channel;
-
-use igd::{PortMappingProtocol, search_gateway};
-use std::net::{Ipv4Addr, SocketAddrV4};
 
 //================================================================
 
@@ -21,11 +20,12 @@ use nimbus_common::prelude::*;
 //================================================================
 
 struct App {
-    client: HashMap<u64, (Account, tokio::sync::mpsc::Sender<CommandServer>)>,
+    client: HashMap<AccountID, (Account, tokio::sync::mpsc::Sender<CommandServer>)>,
     server: Server,
     file: String,
     port: u16,
     uPnP: bool,
+    verbose: bool,
 }
 
 impl Default for App {
@@ -33,6 +33,7 @@ impl Default for App {
         let mut file = "server.data".to_string();
         let mut port = 8080;
         let mut uPnP = false;
+        let mut verbose = false;
         let mut list = std::env::args();
         list.next();
 
@@ -61,6 +62,9 @@ impl Default for App {
                 "--uPnP" => {
                     uPnP = true;
                 }
+                "--verbose" => {
+                    verbose = true;
+                }
                 x => {
                     println!("unknown argument \"{x}\".");
                 }
@@ -73,6 +77,7 @@ impl Default for App {
             file,
             port,
             uPnP,
+            verbose,
         }
     }
 }
@@ -156,6 +161,16 @@ impl App {
                                 // TO-DO do I need to store account_c?
                                 app.client.insert(account_i, (account_c, tx));
 
+                                // TO-DO send this new account to every other client, THEN send this.
+                                let message = Message::new(
+                                    0,
+                                    None,
+                                    MessageKind::System(MessageSystem::Enter(0)),
+                                    None,
+                                );
+                                app.server.push_message(0, message.clone());
+                                app.send_all(CommandServer::Message(message)).await;
+
                                 // TO-DO send to EVERY other client that this client is now online
                                 CommandServer::Enter(account_i, app.server.clone())
                                     .write(&mut socket)
@@ -183,6 +198,16 @@ impl App {
 
                                         // TO-DO do I need to store account_c?
                                         app.client.insert(account_i, (account_c, tx));
+
+                                        // TO-DO send this new account to every other client, THEN send this.
+                                        let message = Message::new(
+                                            0,
+                                            None,
+                                            MessageKind::System(MessageSystem::Enter(0)),
+                                            None,
+                                        );
+                                        app.server.push_message(0, message.clone());
+                                        app.send_all(CommandServer::Message(message)).await;
 
                                         // TO-DO send to EVERY other client that this client is now online
                                         CommandServer::Enter(account_i, app.server.clone())
@@ -229,14 +254,14 @@ impl App {
                             .await;
                     }
                     CommandClient::Message(channel, message) => {
-                        let message = Message::new(*channel, index, message.clone(), None);
+                        let message = Message::new(*channel, Some(index), message.clone(), None);
                         let mut app = app.lock().await;
                         app.server.push_message(*channel, message.clone());
                         app.send_all(CommandServer::Message(message)).await;
                     }
                     CommandClient::MessageReply(channel, message, content) => {
                         let message =
-                            Message::new(*channel, index, content.clone(), Some(*message));
+                            Message::new(*channel, Some(index), content.clone(), Some(*message));
                         let mut app = app.lock().await;
                         app.server.push_message(*channel, message.clone());
                         app.send_all(CommandServer::Message(message)).await;
@@ -359,8 +384,8 @@ async fn main() -> anyhow::Result<()> {
 
     app.lock().await.welcome();
 
-    App::listen(app.clone(), socket, tx).await?;
-    App::handle(app, rx);
+    App::handle(app.clone(), rx);
+    App::listen(app, socket, tx).await?;
 
     Ok(())
 }
