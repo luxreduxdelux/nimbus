@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -9,6 +8,7 @@ use crate::account::*;
 use crate::channel::*;
 use crate::message::*;
 use crate::server::*;
+use crate::utility::*;
 
 //================================================================
 
@@ -22,13 +22,13 @@ pub enum CommandClient {
     Nonce(Signature),
 
     Message(ChannelID, MessageKind),
-    MessageReply(ChannelID, MessageID, MessageKind),
-    MessageReact(ChannelID, MessageID),
-    MessageStar(ChannelID, MessageID),
-    MessageEdit(ChannelID, MessageID, Message),
-    MessageDelete(ChannelID, MessageID),
+    MessageReply(MessageID, MessageKind),
+    MessageReact(MessageID),
+    MessageStar(MessageID),
+    MessageEdit(MessageID, Message),
+    MessageDelete(MessageID),
 
-    PollVote(ChannelID, MessageID, usize),
+    PollVote(MessageID, usize),
 
     AccountChannel(ChannelID),
     //AccountActivity(Option<AccountActivity>),
@@ -38,12 +38,8 @@ pub enum CommandClient {
 }
 
 impl CommandClient {
-    pub fn serialize(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap()
-    }
-
     pub async fn write(&self, socket: &mut TcpStream) {
-        let data = self.serialize();
+        let data = serialize(self).unwrap();
         let size = (data.len() as u32).to_le_bytes();
         let mut size = vec![size[0], size[1], size[2], size[3]];
         size.extend(data);
@@ -59,7 +55,7 @@ impl CommandClient {
         let mut buffer = vec![0; size as usize];
 
         socket.read_exact(&mut buffer).await?;
-        let (command, _) = bincode::serde::decode_from_slice(&buffer, bincode::config::standard())?;
+        let command = deserialize(&buffer)?;
 
         Ok(command)
     }
@@ -79,9 +75,9 @@ pub enum CommandServer {
     Nonce(Challenge),
 
     Message(Message),
-    MessageDelete(ChannelID, MessageID),
+    MessageDelete(MessageID),
 
-    PollVote(AccountID, ChannelID, MessageID, usize),
+    PollVote(AccountID, MessageID, usize),
 
     AccountChannel(AccountID, ChannelID),
     //AccountActivity(AccountID, Option<AccountActivity>),
@@ -91,12 +87,8 @@ pub enum CommandServer {
 }
 
 impl CommandServer {
-    pub fn serialize(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap()
-    }
-
     pub async fn write(&self, socket: &mut TcpStream) {
-        let data = self.serialize();
+        let data = serialize(self).unwrap();
         let size = (data.len() as u32).to_le_bytes();
         let mut size = vec![size[0], size[1], size[2], size[3]];
         size.extend(data);
@@ -112,7 +104,7 @@ impl CommandServer {
         let mut buffer = vec![0; size as usize];
 
         socket.read_exact(&mut buffer).await?;
-        let (command, _) = bincode::serde::decode_from_slice(&buffer, bincode::config::standard())?;
+        let command = deserialize(&buffer)?;
 
         Ok(command)
     }

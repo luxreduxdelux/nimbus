@@ -62,13 +62,13 @@ impl Client {
                         .unwrap();
                 }
                 CommandServer::Message(message) => {
-                    self.server.push_message(message.channel, message);
+                    self.server.push_message(message);
                 }
-                CommandServer::MessageDelete(channel, message) => {
-                    self.server.delete_message(channel, message);
+                CommandServer::MessageDelete(message) => {
+                    self.server.delete_message(message);
                 }
-                CommandServer::PollVote(account, channel, message, choice) => {
-                    self.server.poll_vote(account, channel, message, choice);
+                CommandServer::PollVote(account, message, choice) => {
+                    self.server.poll_vote(account, message, choice);
                 }
                 CommandServer::AccountChannel(index, channel) => {
                     self.server.set_account_channel(index, channel);

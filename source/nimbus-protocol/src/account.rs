@@ -1,9 +1,13 @@
+use ed25519_dalek::Signature;
+use ed25519_dalek::VerifyingKey;
+use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 
 //================================================================
 
 use crate::channel::*;
-use crate::role::*;
+use crate::command::Challenge;
 
 //================================================================
 
@@ -12,13 +16,12 @@ pub type AccountKey = [u8; 32];
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Account {
+    pub index: AccountID,
     pub key: AccountKey,
     pub name_nick: String,
     pub name_user: String,
     pub info: String,
     pub icon: Option<Vec<u8>>,
-    pub role: Vec<RoleID>,
-    pub index: AccountID,
     // TO-DO make option? to signify we are not even in the server
     pub channel: ChannelID,
     pub activity: Option<AccountActivity>,
@@ -133,7 +136,6 @@ impl AccountConnect {
             name_user: self.name_user,
             info: self.info,
             icon: self.icon,
-            role: Default::default(),
             index,
             channel: Default::default(),
             activity: Default::default(),
@@ -141,5 +143,22 @@ impl AccountConnect {
             state: Default::default(),
             write: Default::default(),
         }
+    }
+
+    pub fn create_nonce() -> Challenge {
+        let mut challenge = [0; 32];
+        OsRng.fill_bytes(&mut challenge);
+        challenge.to_vec()
+    }
+
+    pub fn verify_nonce(
+        key: AccountKey,
+        challenge: Challenge,
+        signature: crate::command::Signature,
+    ) -> bool {
+        let v_key = VerifyingKey::from_bytes(&key).unwrap();
+        let v_sig = Signature::from_bytes(signature.as_slice().try_into().unwrap());
+
+        v_key.verify_strict(&challenge, &v_sig).is_ok()
     }
 }

@@ -13,8 +13,7 @@ if [ "$1" = "--build-NT" ]; then
     BUILD_EXTENSION=".exe"
 fi
 
-cargo build $BUILD_TYPE --release --bin nimbus-client
-cargo build $BUILD_TYPE --release --bin nimbus-server
+cargo build $BUILD_TYPE --release --bin nimbus-client --bin nimbus-server
 
 zip -9 -j nimbus_${BUILD_NAME}_${BUILD_DATE}.zip\
     target/${BUILD_PATH}release/nimbus-client${BUILD_EXTENSION}\

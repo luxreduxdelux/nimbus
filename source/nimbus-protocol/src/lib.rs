@@ -1,5 +1,4 @@
 pub mod account;
-pub mod category;
 pub mod channel;
 pub mod client;
 pub mod client_multi;
@@ -9,6 +8,6 @@ pub mod identifier;
 pub mod markdown;
 pub mod message;
 pub mod prelude;
-pub mod role;
 pub mod server;
-pub mod sticker;
+pub mod storage;
+mod utility;

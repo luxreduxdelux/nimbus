@@ -1,9 +1,9 @@
-use ed25519_dalek::Signature;
-use ed25519_dalek::VerifyingKey;
+mod command;
+
+//================================================================
+
 use igd::Gateway;
 use igd::{PortMappingProtocol, search_gateway};
-use rand::RngCore;
-use rand::rngs::OsRng;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::Arc;
@@ -15,69 +15,23 @@ use tokio::sync::mpsc::channel;
 
 //================================================================
 
+use crate::command::*;
 use nimbus_protocol::prelude::*;
 
 //================================================================
 
 struct App {
     client: HashMap<AccountID, (Account, tokio::sync::mpsc::Sender<CommandServer>)>,
-    server: Server,
-    file: String,
-    port: u16,
-    uPnP: bool,
-    verbose: bool,
+    storage: Storage,
+    argument: Argument,
 }
 
-impl Default for App {
-    fn default() -> Self {
-        let mut file = "server.data".to_string();
-        let mut port = 8080;
-        let mut uPnP = false;
-        let mut verbose = false;
-        let mut list = std::env::args();
-        list.next();
-
-        while let Some(argument) = list.next() {
-            match argument.as_str() {
-                "--file" => {
-                    if let Some(argument) = list.next() {
-                        file = argument;
-                    } else {
-                        println!("missing argument \"{{file}}\" for command \"--file\".");
-                    }
-                }
-                "--port" => {
-                    if let Some(argument) = list.next() {
-                        if let Ok(argument) = argument.parse() {
-                            port = argument;
-                        } else {
-                            println!(
-                                "invalid numerical argument \"{argument}\" for command \"--port\"."
-                            );
-                        }
-                    } else {
-                        println!("missing argument \"{{port}}\" for command \"--port\".");
-                    }
-                }
-                "--uPnP" => {
-                    uPnP = true;
-                }
-                "--verbose" => {
-                    verbose = true;
-                }
-                x => {
-                    println!("unknown argument \"{x}\".");
-                }
-            }
-        }
-
+impl App {
+    fn new(argument: Argument) -> Self {
         Self {
             client: Default::default(),
-            server: Server::load(&file),
-            file,
-            port,
-            uPnP,
-            verbose,
+            storage: Storage::new(&argument.file).unwrap(),
+            argument,
         }
     }
 }
@@ -120,108 +74,45 @@ impl App {
         let a_tx = a_tx.clone();
         let (tx, rx) = channel::<CommandServer>(128);
 
-        println!("[SERVER] Connect: {socket:#?}");
+        println!("[SERVER::Accept] Connect: {socket:#?}");
 
         tokio::spawn(async move {
-            let mut key_challenge = None;
-
             loop {
                 let command = CommandClient::read(&mut socket).await;
 
-                println!("[SERVER] {command:#?}");
+                println!("[SERVER::Accept] {command:#?}");
 
                 if let Ok(command) = command {
                     match command {
-                        CommandClient::Enter(account_connect) => {
-                            if let Err(error) = account_connect.is_valid() {
-                                CommandServer::Error(Error::Account(error))
-                                    .write(&mut socket)
-                                    .await;
+                        CommandClient::Enter(account) => {
+                            let app = app.lock().await;
+
+                            if let Ok(Some(index)) = app.storage.get_account_key(account.key) {
+                                CommandServer::Enter(
+                                    index,
+                                    Server::from_storage(&app.storage).unwrap(),
+                                )
+                                .write(&mut socket)
+                                .await;
+
+                                App::client(socket, a_tx, rx, index).await;
                                 break;
-                            }
-
-                            let mut app = app.lock().await;
-
-                            if app.server.account_key.contains_key(&account_connect.key) {
-                                let mut challenge = [0; 32];
-                                OsRng.fill_bytes(&mut challenge);
-
-                                key_challenge = Some((account_connect, challenge));
-
-                                CommandServer::Nonce(challenge.to_vec())
-                                    .write(&mut socket)
-                                    .await;
                             } else {
-                                // TO-DO always do nonce challenge, irrespective of whether this account key has already been in the server before
-                                let account_i = app.server.count_account;
-                                let account_c = account_connect.clone().into_account(account_i);
-                                app.server.account_key.insert(account_c.key, account_i);
-                                app.server.push_account(account_c.clone());
+                                let index = app.storage.count_account().unwrap();
+                                app.storage.insert_account_key(account.key, index).unwrap();
+                                app.storage
+                                    .insert_account(account.into_account(index))
+                                    .unwrap();
 
-                                // TO-DO do I need to store account_c?
-                                app.client.insert(account_i, (account_c, tx));
+                                CommandServer::Enter(
+                                    index,
+                                    Server::from_storage(&app.storage).unwrap(),
+                                )
+                                .write(&mut socket)
+                                .await;
 
-                                // TO-DO send this new account to every other client, THEN send this.
-                                let message = Message::new(
-                                    0,
-                                    None,
-                                    MessageKind::System(MessageSystem::Enter(0)),
-                                    None,
-                                );
-                                app.server.push_message(0, message.clone());
-                                app.send_all(CommandServer::Message(message)).await;
-
-                                // TO-DO send to EVERY other client that this client is now online
-                                CommandServer::Enter(account_i, app.server.clone())
-                                    .write(&mut socket)
-                                    .await;
-
-                                App::client(socket, a_tx, rx, account_i).await;
+                                App::client(socket, a_tx, rx, index).await;
                                 break;
-                            }
-                        }
-                        CommandClient::Nonce(signature) => {
-                            let mut app = app.lock().await;
-
-                            if let Some((ref account_connect, challenge)) = key_challenge {
-                                let v_key = VerifyingKey::from_bytes(&account_connect.key).unwrap();
-                                let v_sig =
-                                    Signature::from_bytes(signature.as_slice().try_into().unwrap());
-
-                                if v_key.verify_strict(&challenge, &v_sig).is_ok() {
-                                    if let Some(account_i) =
-                                        app.server.account_key.get(&account_connect.key).cloned()
-                                    {
-                                        let account_c =
-                                            account_connect.clone().into_account(account_i);
-                                        app.server.account.insert(account_i, account_c.clone());
-
-                                        // TO-DO do I need to store account_c?
-                                        app.client.insert(account_i, (account_c, tx));
-
-                                        // TO-DO send this new account to every other client, THEN send this.
-                                        let message = Message::new(
-                                            0,
-                                            None,
-                                            MessageKind::System(MessageSystem::Enter(0)),
-                                            None,
-                                        );
-                                        app.server.push_message(0, message.clone());
-                                        app.send_all(CommandServer::Message(message)).await;
-
-                                        // TO-DO send to EVERY other client that this client is now online
-                                        CommandServer::Enter(account_i, app.server.clone())
-                                            .write(&mut socket)
-                                            .await;
-
-                                        App::client(socket, a_tx, rx, account_i).await;
-                                        break;
-                                    } else {
-                                        CommandServer::Error(Error::Connect(ConnectError::Nonce))
-                                            .write(&mut socket)
-                                            .await;
-                                    }
-                                }
                             }
                         }
                         _ => {}
@@ -237,68 +128,54 @@ impl App {
                 println!("[SERVER::Loop] {command:#?}");
 
                 match &command {
-                    CommandClient::Leave => {
-                        let mut app = app.lock().await;
-                        app.client.remove(&index);
-
-                        // TO-DO maybe should be CommandServer::AccountLeave?
-                        app.server
-                            .set_account_presence(index, AccountPresence::Offline);
-                        app.server.set_account_write(index, false);
-                        app.send_all(CommandServer::AccountPresence(
-                            index,
-                            AccountPresence::Offline,
-                        ))
-                        .await;
-                        app.send_all(CommandServer::AccountWrite(index, false))
-                            .await;
-                    }
                     CommandClient::Message(channel, message) => {
-                        let message = Message::new(*channel, Some(index), message.clone(), None);
-                        let mut app = app.lock().await;
-                        app.server.push_message(*channel, message.clone());
-                        app.send_all(CommandServer::Message(message)).await;
-                    }
-                    CommandClient::MessageReply(channel, message, content) => {
+                        let app = app.lock().await;
+                        let m_index = app.storage.count_account().unwrap();
                         let message =
-                            Message::new(*channel, Some(index), content.clone(), Some(*message));
-                        let mut app = app.lock().await;
-                        app.server.push_message(*channel, message.clone());
+                            Message::new(*channel, m_index, Some(index), message.clone(), None);
+                        app.storage.insert_message(message.clone());
                         app.send_all(CommandServer::Message(message)).await;
                     }
-                    CommandClient::MessageDelete(channel, message) => {
-                        let mut app = app.lock().await;
-                        app.server.delete_message(*channel, *message);
-                        app.send_all(CommandServer::MessageDelete(*channel, *message))
-                            .await;
+                    CommandClient::MessageDelete(message) => {
+                        let app = app.lock().await;
+                        app.storage.remove_message(*message);
+                        app.send_all(CommandServer::MessageDelete(*message)).await;
                     }
-                    CommandClient::PollVote(channel, message, choice) => {
-                        let mut app = app.lock().await;
-                        app.server.poll_vote(index, *channel, *message, *choice);
-                        app.send_all(CommandServer::PollVote(index, *channel, *message, *choice))
-                            .await;
+                    CommandClient::PollVote(message, choice) => {
+                        let app = app.lock().await;
+                        //app.server.poll_vote(index, *message, *choice);
+                        //app.send_all(CommandServer::PollVote(index, *message, *choice))
+                        //    .await;
                     }
                     CommandClient::AccountChannel(channel) => {
-                        let mut app = app.lock().await;
-                        app.server.set_account_channel(index, *channel);
+                        let app = app.lock().await;
+                        app.storage.edit_account(index, |account| {
+                            account.channel = *channel;
+                        });
                         app.send_all(CommandServer::AccountChannel(index, *channel))
                             .await;
                     }
                     CommandClient::AccountPresence(presence) => {
-                        let mut app = app.lock().await;
-                        app.server.set_account_presence(index, presence.clone());
+                        let app = app.lock().await;
+                        app.storage.edit_account(index, |account| {
+                            account.presence = presence.clone();
+                        });
                         app.send_all(CommandServer::AccountPresence(index, presence.clone()))
                             .await;
                     }
                     CommandClient::AccountState(state) => {
-                        let mut app = app.lock().await;
-                        app.server.set_account_state(index, state.clone());
+                        let app = app.lock().await;
+                        app.storage.edit_account(index, |account| {
+                            account.state = state.clone();
+                        });
                         app.send_all(CommandServer::AccountState(index, state.clone()))
                             .await;
                     }
                     CommandClient::AccountWrite(write) => {
-                        let mut app = app.lock().await;
-                        app.server.set_account_write(index, *write);
+                        let app = app.lock().await;
+                        app.storage.edit_account(index, |account| {
+                            account.write = *write;
+                        });
                         app.send_all(CommandServer::AccountWrite(index, *write))
                             .await;
                     }
@@ -341,7 +218,7 @@ impl App {
     async fn socket(app: Arc<Mutex<Self>>) -> anyhow::Result<TcpListener> {
         Ok(TcpListener::bind(SocketAddrV4::new(
             Ipv4Addr::UNSPECIFIED,
-            app.lock().await.port,
+            app.lock().await.argument.port,
         ))
         .await?)
     }
@@ -357,9 +234,13 @@ impl App {
         println!(
             "Welcome to Nimbus! Have a nimble day.\n  • Version: {}\n  • File: {}\n  • Port: {}\n  • uPnP status: {}",
             Self::VERSION,
-            self.file,
-            self.port,
-            if self.uPnP { "active" } else { "inactive" }
+            self.argument.file,
+            self.argument.port,
+            if self.argument.uPnP {
+                "active"
+            } else {
+                "inactive"
+            }
         );
     }
 }
@@ -378,14 +259,27 @@ impl Drop for App {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let app = Arc::new(Mutex::new(App::default()));
-    let socket = App::socket(app.clone()).await?;
-    let (tx, rx) = channel::<(AccountID, CommandClient)>(256);
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
 
-    app.lock().await.welcome();
+    match Command::new() {
+        Command::Run(argument) => {
+            let app = Arc::new(Mutex::new(App::new(argument)));
+            let socket = App::socket(app.clone()).await?;
+            let (tx, rx) = channel::<(AccountID, CommandClient)>(256);
 
-    App::handle(app.clone(), rx);
-    App::listen(app, socket, tx).await?;
+            app.lock().await.welcome();
 
-    Ok(())
+            App::handle(app.clone(), rx);
+            App::listen(app, socket, tx).await?;
+
+            Ok(())
+        }
+        Command::Help => {
+            println!("{}", Command::HELP_TEXT.replace("{version}", App::VERSION));
+
+            Ok(())
+        }
+    }
 }

@@ -1,8 +1,4 @@
-use egui::TextureHandle;
-use resvg::render;
-use resvg::usvg::{Options, Tree};
 use serde::{Deserialize, Serialize};
-use tiny_skia::Pixmap;
 
 //================================================================
 
@@ -28,29 +24,6 @@ pub struct User {
 
 impl User {
     const PATH_FILE: &str = "client.data";
-
-    pub fn generate_image_identifier(&self, ui: &egui::Context) -> TextureHandle {
-        let code = serde_json::to_string(&self.identifier).unwrap();
-        let code = qrcode::QrCode::new(code).unwrap();
-        let icon = code
-            .render::<qrcode::render::svg::Color>()
-            .max_dimensions(256, 256)
-            .build();
-
-        let tree = Tree::from_str(&icon, &Options::default()).unwrap();
-        let mut map = Pixmap::new(256, 256).unwrap();
-
-        render(&tree, tiny_skia::Transform::default(), &mut map.as_mut());
-
-        let icon = map.data().to_vec();
-        let icon = egui::ColorImage::from_rgba_unmultiplied([256, 256], &icon);
-
-        ui.load_texture(
-            "identifier_image",
-            icon,
-            eframe::egui::TextureOptions::default(),
-        )
-    }
 }
 
 impl Into<AccountConnect> for User {
@@ -67,9 +40,8 @@ impl Into<AccountConnect> for User {
 
 impl Default for User {
     fn default() -> Self {
-        if let Ok(data) = std::fs::read(Self::PATH_FILE)
-            && let Ok((user, _)) =
-                bincode::serde::decode_from_slice(&data, bincode::config::standard())
+        if let Ok(data) = std::fs::read_to_string(Self::PATH_FILE)
+            && let Ok(user) = serde_json::from_str(&data)
         {
             user
         } else {
@@ -95,7 +67,7 @@ impl Drop for User {
     fn drop(&mut self) {
         std::fs::write(
             Self::PATH_FILE,
-            bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap(),
+            serde_json::to_string_pretty(&self).unwrap(),
         )
         .unwrap();
     }

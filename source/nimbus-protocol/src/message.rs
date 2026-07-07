@@ -7,7 +7,6 @@ use std::collections::HashSet;
 use crate::account::*;
 use crate::channel::*;
 use crate::server::*;
-use crate::sticker::*;
 
 //================================================================
 
@@ -15,6 +14,7 @@ pub type MessageID = u64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
+    pub index: MessageID,
     pub channel: ChannelID,
     pub account: Option<AccountID>,
     pub star: bool,
@@ -33,12 +33,14 @@ impl<'a> Message {
     }
 
     pub fn new(
+        index: MessageID,
         channel: ChannelID,
         account: Option<AccountID>,
         kind: MessageKind,
         reply: Option<MessageID>,
     ) -> Self {
         Self {
+            index,
             channel,
             account,
             star: Default::default(),
@@ -55,7 +57,6 @@ pub enum MessageKind {
     Text(String),
     File(String, Vec<u8>),
     Poll(Poll),
-    Sticker(u64),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,7 +75,6 @@ pub enum MessageError {
     PollChoiceEmpty,
     PollChoiceLength,
     PollInvalidCorrectIndex,
-    StickerInvalidIndex,
 }
 
 impl MessageKind {
@@ -84,7 +84,6 @@ impl MessageKind {
             MessageKind::Text(text)       => Self::is_valid_text(server, text),
             MessageKind::File(name, data) => Self::is_valid_file(server, name, data),
             MessageKind::Poll(poll)       => Self::is_valid_poll(server, poll),
-            MessageKind::Sticker(index)   => Self::is_valid_sticker(server, index),
             _ => Ok(())
         }
     }
@@ -134,14 +133,6 @@ impl MessageKind {
             && correct > poll.choice.len()
         {
             return Err(MessageError::PollInvalidCorrectIndex);
-        }
-
-        Ok(())
-    }
-
-    pub fn is_valid_sticker(server: &Server, index: &StickerID) -> Result<(), MessageError> {
-        if !server.sticker.contains_key(index) {
-            return Err(MessageError::StickerInvalidIndex);
         }
 
         Ok(())

@@ -13,6 +13,16 @@
             "cmd": ["bash", "bash/run.sh"],
         },
         {
+            "name": "Run (Client)",
+            "working_dir": "$project_path",
+            "cmd": ["bash", "bash/run_client.sh"],
+        },
+        {
+            "name": "Run (Server)",
+            "working_dir": "$project_path",
+            "cmd": ["bash", "bash/run_server.sh"],
+        },
+        {
             "name": "Build & Package",
             "working_dir": "$project_path",
             "cmd": ["bash", "bash/build.sh"]

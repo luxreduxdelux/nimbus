@@ -203,27 +203,17 @@ impl Layout {
             MessageKind::Poll(_) => {
                 ui.label(RichText::new("[Poll]").italics());
             }
-            MessageKind::Sticker(_) => {
-                ui.label(RichText::new("[Sticker]").italics());
-            }
         }
     }
 
-    fn draw_message_reply(
-        ui: &mut egui::Ui,
-        channel: ChannelID,
-        message: MessageID,
-        server: &Server,
-    ) {
-        if let Some(channel) = server.channel.get(&channel) {
-            if let Some(message) = channel.message.get(&message)
-                && let Some(account) = message.account(server)
-            {
-                ui.label(RichText::new(&account.name_nick).weak());
-                Self::draw_message_in_line(ui, message, server);
-            } else {
-                ui.label(RichText::new(t!("message.error")).italics());
-            }
+    fn draw_message_reply(ui: &mut egui::Ui, message: MessageID, server: &Server) {
+        if let Some(message) = server.message.get(&message)
+            && let Some(account) = message.account(server)
+        {
+            ui.label(RichText::new(&account.name_nick).weak());
+            Self::draw_message_in_line(ui, message, server);
+        } else {
+            ui.label(RichText::new(t!("message.error")).italics());
         }
     }
 
@@ -278,7 +268,9 @@ impl Layout {
                 .stick_to_bottom(true)
                 .max_height(height)
                 .show(ui, |ui| {
-                    for (i, message) in &channel.message {
+                    // TO-DO
+                    for (i, message) in &client.server.message {
+                        //for (i, message) in &channel.message {
                         let message_system = message.account.is_none();
 
                         ui.horizontal(|ui| {
@@ -303,12 +295,7 @@ impl Layout {
 
                                         if let Some(reply) = message.reply {
                                             egui::Frame::group(ui.style()).show(ui, |ui| {
-                                                Self::draw_message_reply(
-                                                    ui,
-                                                    channel_index as ChannelID,
-                                                    reply,
-                                                    &client.server,
-                                                );
+                                                Self::draw_message_reply(ui, reply, &client.server);
                                             });
                                         }
 
@@ -316,7 +303,7 @@ impl Layout {
                                             MessageKind::System(message) => {
                                                 Self::draw_message_system(
                                                     ui,
-                                                    message,
+                                                    &message,
                                                     &client.server,
                                                 );
                                             }
@@ -367,10 +354,7 @@ impl Layout {
                                     )
                                     .clicked()
                                     {
-                                        client.send(CommandClient::MessageDelete(
-                                            channel_index as ChannelID,
-                                            *i,
-                                        ));
+                                        client.send(CommandClient::MessageDelete(*i));
                                     };
                                 })
                             });
@@ -417,12 +401,7 @@ impl Layout {
                         .auto_shrink([false, false])
                         .max_height(64.0)
                         .show(ui, |ui| {
-                            Self::draw_message_reply(
-                                ui,
-                                channel_index as ChannelID,
-                                reply,
-                                &client.server,
-                            );
+                            Self::draw_message_reply(ui, reply, &client.server);
                         });
                 });
             } else {
@@ -455,7 +434,6 @@ impl Layout {
                 if Self::draw_button_image(ui, Self::IMAGE_SEND).clicked() {
                     if let Some(message_index) = app.layout.entry_reply {
                         client.send(CommandClient::MessageReply(
-                            channel_index as ChannelID,
                             message_index,
                             MessageKind::Text(app.layout.entry_text.clone()),
                         ));
