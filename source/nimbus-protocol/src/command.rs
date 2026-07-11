@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -6,6 +8,7 @@ use tokio::net::TcpStream;
 
 use crate::account::*;
 use crate::channel::*;
+use crate::configuration::*;
 use crate::message::*;
 use crate::server::*;
 use crate::utility::*;
@@ -28,8 +31,16 @@ pub enum CommandClient {
     MessageEdit(MessageID, Message),
     MessageDelete(MessageID),
 
+    ViewAccount,
+    ViewChannel,
+    ViewMessage(ChannelID),
+
     PollVote(MessageID, usize),
 
+    ConfigurationServer(Configuration),
+    //ConfigurationAccount,
+
+    //
     AccountChannel(ChannelID),
     //AccountActivity(Option<AccountActivity>),
     AccountPresence(AccountPresence),
@@ -76,6 +87,10 @@ pub enum CommandServer {
 
     Message(Message),
     MessageDelete(MessageID),
+
+    ViewAccount(BTreeMap<AccountID, Account>),
+    ViewChannel(BTreeMap<ChannelID, Channel>),
+    ViewMessage(ChannelID, BTreeMap<MessageID, Message>),
 
     PollVote(AccountID, MessageID, usize),
 

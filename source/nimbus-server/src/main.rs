@@ -27,22 +27,24 @@ struct App {
 }
 
 impl App {
-    fn new(argument: Argument) -> Self {
-        Self {
+    fn new(argument: Argument) -> anyhow::Result<Self> {
+        Ok(Self {
             client: Default::default(),
-            storage: Storage::new(&argument.file).unwrap(),
+            storage: Storage::new(&argument.file)?,
             argument,
-        }
+        })
     }
 }
 
 impl App {
     pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-    async fn send_all(&self, command: CommandServer) {
+    async fn send_all(&self, command: CommandServer) -> anyhow::Result<()> {
         for (_, (_, client)) in &self.client {
-            client.send(command.clone()).await;
+            client.send(command.clone()).await?;
         }
+
+        Ok(())
     }
 
     async fn listen(
@@ -85,31 +87,28 @@ impl App {
                 if let Ok(command) = command {
                     match command {
                         CommandClient::Enter(account) => {
-                            let app = app.lock().await;
+                            let mut app = app.lock().await;
 
                             if let Ok(Some(index)) = app.storage.get_account_key(account.key) {
-                                CommandServer::Enter(
-                                    index,
-                                    Server::from_storage(&app.storage).unwrap(),
-                                )
-                                .write(&mut socket)
-                                .await;
+                                app.client.insert(index, (account.into_account(index), tx));
+
+                                CommandServer::Enter(index, Server::from_storage(&app.storage)?)
+                                    .write(&mut socket)
+                                    .await;
 
                                 App::client(socket, a_tx, rx, index).await;
                                 break;
                             } else {
-                                let index = app.storage.count_account().unwrap();
-                                app.storage.insert_account_key(account.key, index).unwrap();
+                                let index = app.storage.count_account()?;
+                                app.storage.insert_account_key(account.key, index)?;
                                 app.storage
-                                    .insert_account(account.into_account(index))
-                                    .unwrap();
+                                    .insert_account(account.clone().into_account(index))?;
 
-                                CommandServer::Enter(
-                                    index,
-                                    Server::from_storage(&app.storage).unwrap(),
-                                )
-                                .write(&mut socket)
-                                .await;
+                                app.client.insert(index, (account.into_account(index), tx));
+
+                                CommandServer::Enter(index, Server::from_storage(&app.storage)?)
+                                    .write(&mut socket)
+                                    .await;
 
                                 App::client(socket, a_tx, rx, index).await;
                                 break;
@@ -119,6 +118,8 @@ impl App {
                     }
                 }
             }
+
+            Ok::<(), anyhow::Error>(())
         });
     }
 
@@ -130,16 +131,36 @@ impl App {
                 match &command {
                     CommandClient::Message(channel, message) => {
                         let app = app.lock().await;
-                        let m_index = app.storage.count_account().unwrap();
-                        let message =
-                            Message::new(*channel, m_index, Some(index), message.clone(), None);
-                        app.storage.insert_message(message.clone());
-                        app.send_all(CommandServer::Message(message)).await;
+                        let m_index = app.storage.count_message(*channel)?;
+                        let message = Message::new(m_index, Some(index), message.clone(), None);
+                        app.storage.insert_message(message.clone())?;
+                        app.send_all(CommandServer::Message(message)).await?;
                     }
                     CommandClient::MessageDelete(message) => {
                         let app = app.lock().await;
-                        app.storage.remove_message(*message);
-                        app.send_all(CommandServer::MessageDelete(*message)).await;
+                        app.storage.remove_message(*message)?;
+                        app.send_all(CommandServer::MessageDelete(*message)).await?;
+                    }
+                    CommandClient::ViewAccount => {
+                        let app = app.lock().await;
+                        let view = app.storage.get_all_account()?;
+                        app.send_all(CommandServer::ViewAccount(view)).await?;
+                    }
+                    CommandClient::ViewChannel => {
+                        let app = app.lock().await;
+                        let view = app.storage.get_all_channel()?;
+                        app.send_all(CommandServer::ViewChannel(view)).await?;
+                    }
+                    CommandClient::ViewMessage(channel) => {
+                        // TO-DO pick from given channel only, instead of all
+                        let app = app.lock().await;
+                        let (_, count_max) = app.storage.count_message(*channel)?;
+                        let count_min = count_max.saturating_sub(5);
+                        let view = app
+                            .storage
+                            .get_range_message((*channel, count_min)..(*channel, count_max))?;
+                        app.send_all(CommandServer::ViewMessage(*channel, view))
+                            .await?;
                     }
                     CommandClient::PollVote(message, choice) => {
                         let app = app.lock().await;
@@ -151,37 +172,39 @@ impl App {
                         let app = app.lock().await;
                         app.storage.edit_account(index, |account| {
                             account.channel = *channel;
-                        });
+                        })?;
                         app.send_all(CommandServer::AccountChannel(index, *channel))
-                            .await;
+                            .await?;
                     }
                     CommandClient::AccountPresence(presence) => {
                         let app = app.lock().await;
                         app.storage.edit_account(index, |account| {
                             account.presence = presence.clone();
-                        });
+                        })?;
                         app.send_all(CommandServer::AccountPresence(index, presence.clone()))
-                            .await;
+                            .await?;
                     }
                     CommandClient::AccountState(state) => {
                         let app = app.lock().await;
                         app.storage.edit_account(index, |account| {
                             account.state = state.clone();
-                        });
+                        })?;
                         app.send_all(CommandServer::AccountState(index, state.clone()))
-                            .await;
+                            .await?;
                     }
                     CommandClient::AccountWrite(write) => {
                         let app = app.lock().await;
                         app.storage.edit_account(index, |account| {
                             account.write = *write;
-                        });
+                        })?;
                         app.send_all(CommandServer::AccountWrite(index, *write))
-                            .await;
+                            .await?;
                     }
                     _ => {}
                 }
             }
+
+            Ok::<(), anyhow::Error>(())
         });
     }
 
@@ -197,11 +220,11 @@ impl App {
                     result = CommandClient::read(&mut handle) => {
                         match result {
                             Ok(command) => {
-                                tx.send((account, command)).await.unwrap();
+                                tx.send((account, command)).await?;
                             }
                             Err(err) => {
-                                eprintln!("read error: {err}");
-                                tx.send((account, CommandClient::Leave)).await.unwrap();
+                                eprintln!("[SERVER] read error: {err}");
+                                tx.send((account, CommandClient::Leave)).await?;
                                 break;
                             }
                         }
@@ -212,6 +235,8 @@ impl App {
                     }
                 }
             }
+
+            Ok::<(), anyhow::Error>(())
         });
     }
 
@@ -265,7 +290,7 @@ async fn main() -> anyhow::Result<()> {
 
     match Command::new() {
         Command::Run(argument) => {
-            let app = Arc::new(Mutex::new(App::new(argument)));
+            let app = Arc::new(Mutex::new(App::new(argument)?));
             let socket = App::socket(app.clone()).await?;
             let (tx, rx) = channel::<(AccountID, CommandClient)>(256);
 

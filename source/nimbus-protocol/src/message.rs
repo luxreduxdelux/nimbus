@@ -5,17 +5,18 @@ use std::collections::HashSet;
 //================================================================
 
 use crate::account::*;
+use crate::cache::*;
 use crate::channel::*;
 use crate::server::*;
+use crate::token::*;
 
 //================================================================
 
-pub type MessageID = u64;
+pub type MessageID = (ChannelID, u64);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub index: MessageID,
-    pub channel: ChannelID,
     pub account: Option<AccountID>,
     pub star: bool,
     pub kind: MessageKind,
@@ -24,24 +25,40 @@ pub struct Message {
 }
 
 impl<'a> Message {
-    pub fn account(&'a self, server: &'a Server) -> Option<&'a Account> {
-        if let Some(account) = &self.account {
-            server.account.get(account)
-        } else {
-            None
+    pub fn account(&'a self, cache: &'a mut Cache) -> Option<&'a Account> {
+        if let Some(account) = self.account
+            && let Some(account) = cache.get_account(account)
+        {
+            return Some(account);
         }
+
+        None
+    }
+
+    pub fn is_mention(&self, account: &Account) -> bool {
+        if let MessageKind::Text(text) = &self.kind {
+            let (list, _, _) = Token::parse(text);
+
+            for token in list {
+                if let Token::Account(mention) = token
+                    && mention[1..mention.len()] == account.name_user
+                {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     pub fn new(
         index: MessageID,
-        channel: ChannelID,
         account: Option<AccountID>,
         kind: MessageKind,
         reply: Option<MessageID>,
     ) -> Self {
         Self {
             index,
-            channel,
             account,
             star: Default::default(),
             kind,

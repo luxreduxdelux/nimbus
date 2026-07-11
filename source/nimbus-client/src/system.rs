@@ -119,29 +119,27 @@ impl System {
         *self.icon.lock().unwrap() = Some(2);
     }
 
-    pub fn push_notification(&self) {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use notify_rust::Notification;
+    pub fn push_notification(&self, name: String, text: String) {
+        use notify_rust::Notification;
 
-            std::thread::spawn(|| {
-                let handle = Notification::new()
-                    .appname("nimbus")
-                    .summary("user name")
-                    .body("user text")
-                    // TO-DO use user avatar
-                    //.image_data(
-                    //    notify_rust::Image::from_rgba(64, 64, icon_normal.to_rgba8().to_vec()).unwrap(),
-                    //)
-                    // TO-DO open Nimbus if hidden
-                    .action("open", "Open Chat")
-                    .action("read", "Mark Read")
-                    .show()
-                    .unwrap();
+        std::thread::spawn(move || {
+            let icon = image::load_from_memory(Self::ICON_NORMAL).unwrap();
+            let icon = notify_rust::Image::from_rgba(64, 64, icon.to_rgba8().to_vec()).unwrap();
 
-                handle.wait_for_action(|event| println!("{event:?}"));
-            });
-        }
+            let handle = Notification::new()
+                .appname("nimbus")
+                .summary(&name)
+                .body(&text)
+                // TO-DO use user avatar
+                .image_data(icon)
+                // TO-DO open Nimbus if hidden
+                //.action("open", "Open Chat")
+                //.action("read", "Mark Read")
+                .show()
+                .unwrap();
+
+            handle.wait_for_action(|event| println!("{event:?}"));
+        });
     }
 
     pub fn exit(&self) -> bool {

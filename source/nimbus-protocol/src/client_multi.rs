@@ -9,7 +9,10 @@ pub struct ClientMulti {
 }
 
 impl ClientMulti {
-    pub fn update<F: FnMut(CommandServer)>(&mut self, mut call: F) -> anyhow::Result<()> {
+    pub fn update<F: FnMut(&mut Client, &CommandServer)>(
+        &mut self,
+        mut call: F,
+    ) -> anyhow::Result<()> {
         for c in &mut self.client {
             c.update(&mut call)?;
         }

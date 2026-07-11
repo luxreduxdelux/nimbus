@@ -6,6 +6,7 @@ use tokio::net::TcpStream;
 //================================================================
 
 use crate::account::*;
+use crate::cache::*;
 use crate::command::*;
 use crate::server::*;
 
@@ -18,13 +19,22 @@ pub struct Client {
     pub index: u64,
     pub ready: bool,
     pub error: Option<Error>,
+    pub cache: Cache,
 }
 
 impl Client {
     /// Create a new client.
-    pub fn new(address: String, key: AccountKey, account: AccountConnect) -> Self {
+    pub fn new(
+        address: String,
+        key: AccountKey,
+        account: AccountConnect,
+        call: Option<CommandCall>,
+    ) -> Self {
+        let thread = Thread::new(address, account, call);
+
         Self {
-            thread: Thread::new(address, account),
+            cache: Cache::new(thread.tx.clone()),
+            thread,
             server: Server::default(),
             key,
             index: Default::default(),
@@ -34,11 +44,16 @@ impl Client {
     }
 
     /// Update the client state, polling for any new command from the server.
-    pub fn update<F: FnMut(CommandServer)>(&mut self, mut call: F) -> anyhow::Result<()> {
+    pub fn update<F: FnMut(&mut Self, &CommandServer)>(
+        &mut self,
+        mut call: F,
+    ) -> anyhow::Result<()> {
         while let Ok(command) = self.thread.rx.try_recv() {
-            println!("[CLIENT::Update] {command:?}");
+            println!("[CLIENT::Update] {command:#?}");
 
-            call(command.clone());
+            call(self, &command);
+
+            self.cache.update(&command);
 
             match command {
                 CommandServer::Error(error) => {
@@ -61,31 +76,15 @@ impl Client {
                         .send(CommandClient::Nonce(challenge.to_vec()))
                         .unwrap();
                 }
-                CommandServer::Message(message) => {
-                    self.server.push_message(message);
-                }
-                CommandServer::MessageDelete(message) => {
-                    self.server.delete_message(message);
-                }
-                CommandServer::PollVote(account, message, choice) => {
-                    self.server.poll_vote(account, message, choice);
-                }
-                CommandServer::AccountChannel(index, channel) => {
-                    self.server.set_account_channel(index, channel);
-                }
-                CommandServer::AccountPresence(index, presence) => {
-                    self.server.set_account_presence(index, presence);
-                }
-                CommandServer::AccountState(index, state) => {
-                    self.server.set_account_state(index, state);
-                }
-                CommandServer::AccountWrite(index, write) => {
-                    self.server.set_account_write(index, write);
-                }
+                _ => {}
             }
         }
 
         Ok(())
+    }
+
+    pub fn get_local_account(&mut self) -> Option<&Account> {
+        self.cache.get_account(self.index)
     }
 
     pub fn send(&self, command: CommandClient) -> anyhow::Result<()> {
@@ -95,13 +94,17 @@ impl Client {
 
 //================================================================
 
+pub type CommandCall = Box<dyn FnMut(CommandServer) + Send>;
+pub type ThreadTX = tokio::sync::mpsc::UnboundedSender<CommandClient>;
+pub type ThreadRX = tokio::sync::mpsc::UnboundedReceiver<CommandServer>;
+
 struct Thread {
-    tx: tokio::sync::mpsc::UnboundedSender<CommandClient>,
-    rx: tokio::sync::mpsc::UnboundedReceiver<CommandServer>,
+    tx: ThreadTX,
+    rx: ThreadRX,
 }
 
 impl Thread {
-    fn new(address: String, account: AccountConnect) -> Self {
+    fn new(address: String, account: AccountConnect, mut call: Option<CommandCall>) -> Self {
         let (tx_s, rx) = tokio::sync::mpsc::unbounded_channel::<CommandServer>();
         let (tx, mut rx_s) = tokio::sync::mpsc::unbounded_channel::<CommandClient>();
 
@@ -121,16 +124,21 @@ impl Thread {
                     loop {
                         tokio::select! {
                         Some(command) = rx_s.recv() => {
+                            println!("[CLIENT] write: {command:#?}");
                             command.write(&mut socket).await;
                         }
                         result = CommandServer::read(&mut socket) => {
                             match result {
                                     Ok(command) => {
+                                        if let Some(call) = &mut call {
+                                            call(command.clone());
+                                        }
+
                                         tx_s.send(command).unwrap();
                                     }
                                     Err(err) => {
                                         tx_s.send(CommandServer::Leave);
-                                        eprintln!("read error: {err}");
+                                        eprintln!("[CLIENT] read error: {err}");
                                         break;
                                     }
                                 }

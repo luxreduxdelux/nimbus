@@ -8,6 +8,5 @@ anyhow          = { version = "1.0"  }
 tokio           = { version = "1.0", features = ["full"] }
 serde           = { version = "1.0", features = ["derive"] }
 serde_json      = { version = "1.0" }
-clap            = { version = "4.0", features = ["derive"] }
 nimbus-protocol = { path = "../nimbus-protocol" }
 igd             = { version = "0.12" }

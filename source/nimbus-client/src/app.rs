@@ -47,10 +47,17 @@ impl App {
         let mut client = ClientMulti::default();
 
         for address in &user.address {
+            let call_ui = ui.clone();
+
+            let call: Box<dyn FnMut(CommandServer) + Send> = Box::new(move |_: CommandServer| {
+                call_ui.request_repaint();
+            });
+
             client.client.push(Client::new(
                 address.to_string(),
                 user.identifier.key,
                 user.clone().into(),
+                Some(call),
             ));
         }
 
@@ -65,7 +72,20 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
-        self.client.update(|_| {});
+        self.client.update(|client, command| match command {
+            CommandServer::Message(message) => {
+                if let MessageKind::Text(text) = &message.kind
+                    && let Some(account) = client.get_local_account()
+                    && message.is_mention(account)
+                    && let Some(account) = message.account(&mut client.cache)
+                {
+                    self.system
+                        .push_notification(account.name_nick.to_string(), text.to_string());
+                }
+            }
+            _ => {}
+        });
+
         Layout::draw(self, ui);
 
         if self.system.tray {

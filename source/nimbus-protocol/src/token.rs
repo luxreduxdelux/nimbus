@@ -1,8 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::{iter::Enumerate, str::Chars};
 
 //================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Token {
     /// Plain text. (hello, world)
     Text(String),
@@ -207,7 +208,7 @@ impl Token {
                     //
                     match which {
                         TokenKind::Account | TokenKind::Channel => {
-                            if !character.is_alphabetic() {
+                            if !(character.is_alphabetic() || character == '_') {
                                 result.push(Self::from_string(buffer.clear()));
                                 which = TokenKind::Text;
                                 index = i;
