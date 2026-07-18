@@ -87,8 +87,8 @@ impl Client {
         self.cache.get_account(self.index)
     }
 
-    pub fn send(&self, command: CommandClient) -> anyhow::Result<()> {
-        Ok(self.thread.tx.send(command)?)
+    pub fn send(&self, command: CommandClient) {
+        if let Err(error) = self.thread.tx.send(command) {}
     }
 }
 
@@ -124,7 +124,6 @@ impl Thread {
                     loop {
                         tokio::select! {
                         Some(command) = rx_s.recv() => {
-                            println!("[CLIENT] write: {command:#?}");
                             command.write(&mut socket).await;
                         }
                         result = CommandServer::read(&mut socket) => {

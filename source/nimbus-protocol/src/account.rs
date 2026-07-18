@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 //================================================================
 
 use crate::channel::*;
-use crate::command::Challenge;
+use crate::command::*;
+use crate::role::*;
 
 //================================================================
 
@@ -22,6 +23,7 @@ pub struct Account {
     pub name_user: String,
     pub info: String,
     pub icon: Option<Vec<u8>>,
+    pub role: Vec<RoleID>,
     // TO-DO make option? to signify we are not even in the server
     pub channel: ChannelID,
     pub activity: Option<AccountActivity>,
@@ -131,12 +133,13 @@ impl AccountConnect {
     pub fn into_account(self, index: u64) -> Account {
         // TO-DO do truncation on self.name_* and such
         Account {
+            index,
             key: self.key,
             name_nick: self.name_nick,
             name_user: self.name_user,
             info: self.info,
             icon: self.icon,
-            index,
+            role: Default::default(),
             channel: Default::default(),
             activity: Default::default(),
             presence: Default::default(),

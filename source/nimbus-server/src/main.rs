@@ -55,7 +55,6 @@ impl App {
         loop {
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
-                    println!("Exiting...");
                     break;
                 }
                 Ok((socket, _)) = socket.accept() => {
@@ -129,47 +128,157 @@ impl App {
                 println!("[SERVER::Loop] {command:#?}");
 
                 match &command {
-                    CommandClient::Message(channel, message) => {
+                    CommandClient::Channel(channel) => {
                         let app = app.lock().await;
-                        let m_index = app.storage.count_message(*channel)?;
-                        let message = Message::new(m_index, Some(index), message.clone(), None);
-                        app.storage.insert_message(message.clone())?;
+                        let channel = Channel::new(app.storage.count_channel()?, channel.clone());
+
+                        app.storage.insert_channel(channel.index, channel.clone())?;
+                        app.send_all(CommandServer::Channel(channel)).await?;
+                    }
+                    CommandClient::ChannelModify(identifier, channel) => {
+                        let app = app.lock().await;
+                        let channel = Channel::new(*identifier, channel.clone());
+
+                        app.storage.change_channel(*identifier, channel.clone())?;
+                        app.send_all(CommandServer::Channel(channel)).await?;
+                    }
+                    CommandClient::ChannelRemove(identifier) => {
+                        let app = app.lock().await;
+
+                        app.storage.remove_channel(*identifier)?;
+                        app.send_all(CommandServer::ChannelRemove(*identifier))
+                            .await?;
+                    }
+                    CommandClient::Message(channel, message) => {
+                        let mut app = app.lock().await;
+                        let value = MessageValue::from_request(message.clone(), &mut app.storage)?;
+                        let message = Message::new(
+                            app.storage.count_message(*channel)?,
+                            Some(index),
+                            value,
+                            None,
+                        )?;
+
+                        app.storage.insert_message(
+                            app.storage.count_message(*channel)?,
+                            message.clone(),
+                        )?;
                         app.send_all(CommandServer::Message(message)).await?;
                     }
-                    CommandClient::MessageDelete(message) => {
+                    CommandClient::MessageRemove(message) => {
                         let app = app.lock().await;
+
                         app.storage.remove_message(*message)?;
-                        app.send_all(CommandServer::MessageDelete(*message)).await?;
+                        app.send_all(CommandServer::MessageRemove(*message)).await?;
+                    }
+                    CommandClient::Stamp(stamp) => {
+                        let mut app = app.lock().await;
+                        let stamp = Stamp::new(
+                            app.storage.count_role()?,
+                            StampValue::from_request(stamp.clone(), &mut app.storage)?,
+                        );
+
+                        app.storage.insert_stamp(stamp.index, stamp.clone())?;
+                        app.send_all(CommandServer::Stamp(stamp)).await?;
+                    }
+                    CommandClient::Role(role) => {
+                        let app = app.lock().await;
+                        let role = Role::new(app.storage.count_role()?, role.clone());
+
+                        app.storage.insert_role(role.index, role.clone())?;
+                        app.send_all(CommandServer::Role(role)).await?;
+                    }
+                    CommandClient::RoleModify(identifier, role) => {
+                        let app = app.lock().await;
+                        let role = Role::new(*identifier, role.clone());
+
+                        app.storage.change_role(*identifier, role.clone())?;
+                        app.send_all(CommandServer::Role(role)).await?;
+                    }
+                    CommandClient::RoleRemove(identifier) => {
+                        let app = app.lock().await;
+
+                        app.storage.remove_role(*identifier)?;
+                        app.send_all(CommandServer::RoleRemove(*identifier)).await?;
+                    }
+
+                    CommandClient::Invite(invite) => {
+                        let app = app.lock().await;
+                        let invite = Invite::new(invite.clone());
+
+                        app.storage
+                            .insert_invite(invite.value.index.clone(), invite.clone())?;
+                        app.send_all(CommandServer::Invite(invite)).await?;
+                    }
+                    CommandClient::InviteRemove(identifier) => {
+                        let app = app.lock().await;
+
+                        app.storage.remove_invite(identifier.clone())?;
+                        app.send_all(CommandServer::InviteRemove(identifier.clone()))
+                            .await?;
                     }
                     CommandClient::ViewAccount => {
                         let app = app.lock().await;
                         let view = app.storage.get_all_account()?;
+
                         app.send_all(CommandServer::ViewAccount(view)).await?;
                     }
                     CommandClient::ViewChannel => {
                         let app = app.lock().await;
                         let view = app.storage.get_all_channel()?;
+
                         app.send_all(CommandServer::ViewChannel(view)).await?;
                     }
                     CommandClient::ViewMessage(channel) => {
-                        // TO-DO pick from given channel only, instead of all
                         let app = app.lock().await;
                         let (_, count_max) = app.storage.count_message(*channel)?;
                         let count_min = count_max.saturating_sub(5);
                         let view = app
                             .storage
                             .get_range_message((*channel, count_min)..(*channel, count_max))?;
+
                         app.send_all(CommandServer::ViewMessage(*channel, view))
                             .await?;
                     }
+                    CommandClient::ViewFile(identifier) => {
+                        let app = app.lock().await;
+
+                        if let Some(file) = app.storage.get_file(*identifier)? {
+                            app.send_all(CommandServer::ViewFile(*identifier, file))
+                                .await?;
+                        }
+                    }
+                    CommandClient::ViewRole => {
+                        let app = app.lock().await;
+                        let view = app.storage.get_all_role()?;
+
+                        app.send_all(CommandServer::ViewRole(view)).await?;
+                    }
+                    CommandClient::ViewInvite => {
+                        let app = app.lock().await;
+                        let view = app.storage.get_all_invite()?;
+
+                        app.send_all(CommandServer::ViewInvite(view)).await?;
+                    }
                     CommandClient::PollVote(message, choice) => {
                         let app = app.lock().await;
-                        //app.server.poll_vote(index, *message, *choice);
-                        //app.send_all(CommandServer::PollVote(index, *message, *choice))
-                        //    .await;
+
+                        app.storage.edit_message(*message, |message| {
+                            if let MessageValue::Poll(poll) = &mut message.value {
+                                let entry = poll.vote.entry(*choice).or_default();
+                                if entry.contains(&index) {
+                                    entry.remove(&index);
+                                } else {
+                                    entry.insert(index);
+                                }
+                            }
+                        })?;
+                        app.send_all(CommandServer::PollVote(index, *message, *choice))
+                            .await?;
                     }
                     CommandClient::AccountChannel(channel) => {
                         let app = app.lock().await;
+
                         app.storage.edit_account(index, |account| {
                             account.channel = *channel;
                         })?;
@@ -178,6 +287,7 @@ impl App {
                     }
                     CommandClient::AccountPresence(presence) => {
                         let app = app.lock().await;
+
                         app.storage.edit_account(index, |account| {
                             account.presence = presence.clone();
                         })?;
@@ -186,6 +296,7 @@ impl App {
                     }
                     CommandClient::AccountState(state) => {
                         let app = app.lock().await;
+
                         app.storage.edit_account(index, |account| {
                             account.state = state.clone();
                         })?;
@@ -194,6 +305,7 @@ impl App {
                     }
                     CommandClient::AccountWrite(write) => {
                         let app = app.lock().await;
+
                         app.storage.edit_account(index, |account| {
                             account.write = *write;
                         })?;

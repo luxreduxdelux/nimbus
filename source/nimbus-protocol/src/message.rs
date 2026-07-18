@@ -1,3 +1,5 @@
+use chrono::DateTime;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -7,7 +9,10 @@ use std::collections::HashSet;
 use crate::account::*;
 use crate::cache::*;
 use crate::channel::*;
+use crate::file::*;
 use crate::server::*;
+use crate::stamp::*;
+use crate::storage::*;
 use crate::token::*;
 
 //================================================================
@@ -18,10 +23,11 @@ pub type MessageID = (ChannelID, u64);
 pub struct Message {
     pub index: MessageID,
     pub account: Option<AccountID>,
+    pub date: DateTime<Utc>,
     pub star: bool,
-    pub kind: MessageKind,
     pub reply: Option<MessageID>,
     pub react: HashMap<char, (AccountID, u64)>,
+    pub value: MessageValue,
 }
 
 impl<'a> Message {
@@ -36,7 +42,7 @@ impl<'a> Message {
     }
 
     pub fn is_mention(&self, account: &Account) -> bool {
-        if let MessageKind::Text(text) = &self.kind {
+        if let MessageValue::Text(text) = &self.value {
             let (list, _, _) = Token::parse(text);
 
             for token in list {
@@ -54,54 +60,67 @@ impl<'a> Message {
     pub fn new(
         index: MessageID,
         account: Option<AccountID>,
-        kind: MessageKind,
+        value: MessageValue,
         reply: Option<MessageID>,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
             index,
             account,
             star: Default::default(),
-            kind,
+            date: Utc::now(),
             reply,
             react: Default::default(),
-        }
+            value,
+        })
     }
 }
 
+//================================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MessageKind {
+pub enum MessageValue {
     System(MessageSystem),
     Text(String),
-    File(String, Vec<u8>),
+    File(FileMeta),
     Poll(Poll),
+    Stamp(StampID),
 }
+
+impl MessageValue {
+    pub fn from_request(
+        message: MessageValueRequest,
+        storage: &mut Storage,
+    ) -> anyhow::Result<Self> {
+        Ok(match message {
+            MessageValueRequest::Text(text) => Self::Text(text),
+            MessageValueRequest::File(file) => MessageValue::File(file.insert(storage)?),
+            MessageValueRequest::Poll(poll) => Self::Poll(Poll {
+                vote: Default::default(),
+                value: poll,
+            }),
+            MessageValueRequest::Stamp(stamp) => Self::Stamp(stamp),
+        })
+    }
+}
+
+//================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MessageSystem {
-    Enter(AccountID),
-    Leave(AccountID),
-    Star(MessageID),
+pub enum MessageValueRequest {
+    Text(String),
+    File(FileValue),
+    Poll(PollValue),
+    Stamp(StampID),
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum MessageError {
-    TextEmpty,
-    TextLength,
-    FileEmpty,
-    FileLength,
-    PollChoiceEmpty,
-    PollChoiceLength,
-    PollInvalidCorrectIndex,
-}
-
-impl MessageKind {
+impl MessageValueRequest {
     #[rustfmt::skip]
     pub fn is_valid(&self, server: &Server) -> Result<(), MessageError> {
         match self {
-            MessageKind::Text(text)       => Self::is_valid_text(server, text),
-            MessageKind::File(name, data) => Self::is_valid_file(server, name, data),
-            MessageKind::Poll(poll)       => Self::is_valid_poll(server, poll),
-            _ => Ok(())
+            Self::Text(text)   => Self::is_valid_text(server, text),
+            Self::File(file)   => Self::is_valid_file(server, file),
+            Self::Poll(poll)   => Self::is_valid_poll(server, poll),
+            Self::Stamp(stamp) => Self::is_valid_stamp(server, stamp),
         }
     }
 
@@ -117,21 +136,21 @@ impl MessageKind {
         Ok(())
     }
 
-    pub fn is_valid_file(server: &Server, name: &str, data: &[u8]) -> Result<(), MessageError> {
-        Self::is_valid_text(server, name)?;
+    pub fn is_valid_file(server: &Server, file: &FileValue) -> Result<(), MessageError> {
+        Self::is_valid_text(server, &file.name)?;
 
-        if data.is_empty() {
+        if file.data.is_empty() {
             return Err(MessageError::FileEmpty);
         }
 
-        if data.len() > server.configuration.limit_file_size {
+        if file.data.len() > server.configuration.limit_file_size {
             return Err(MessageError::FileLength);
         }
 
         Ok(())
     }
 
-    pub fn is_valid_poll(server: &Server, poll: &Poll) -> Result<(), MessageError> {
+    pub fn is_valid_poll(server: &Server, poll: &PollValue) -> Result<(), MessageError> {
         Self::is_valid_text(server, &poll.name)?;
 
         if poll.choice.is_empty() {
@@ -143,7 +162,7 @@ impl MessageKind {
         }
 
         for choice in &poll.choice {
-            Self::is_valid_text(server, &choice.name)?;
+            Self::is_valid_text(server, choice)?;
         }
 
         if let Some(correct) = poll.correct
@@ -154,28 +173,47 @@ impl MessageKind {
 
         Ok(())
     }
+
+    pub fn is_valid_stamp(server: &Server, stamp: &StampID) -> Result<(), MessageError> {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MessageSystem {
+    Enter(AccountID),
+    Leave(AccountID),
+    Star(MessageID),
+}
+
+//================================================================
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum MessageError {
+    TextEmpty,
+    TextLength,
+    FileEmpty,
+    FileLength,
+    PollChoiceEmpty,
+    PollChoiceLength,
+    PollInvalidCorrectIndex,
+}
+
+//================================================================
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Poll {
+    pub vote: HashMap<usize, HashSet<AccountID>>,
+    pub value: PollValue,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-// anonymous poll
-// single answer
-// add new option
-// allow re-vote
-// set correct answer
-// limit duration + hide result until end
-pub struct Poll {
+pub struct PollValue {
     pub name: String,
-    pub choice: Vec<PollChoice>,
+    pub choice: Vec<String>,
     pub hidden: bool,
     pub single: bool,
     pub attach: bool,
     pub revoke: bool,
     pub correct: Option<usize>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct PollChoice {
-    pub name: String,
-    // TO-DO client should not be able to manipulate this, only read it
-    pub vote: HashSet<AccountID>,
 }

@@ -1,6 +1,5 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -9,8 +8,13 @@ use tokio::net::TcpStream;
 use crate::account::*;
 use crate::channel::*;
 use crate::configuration::*;
+use crate::emote::*;
+use crate::file::*;
+use crate::invite::*;
 use crate::message::*;
+use crate::role::*;
 use crate::server::*;
+use crate::stamp::*;
 use crate::utility::*;
 
 //================================================================
@@ -24,23 +28,43 @@ pub enum CommandClient {
     Leave,
     Nonce(Signature),
 
-    Message(ChannelID, MessageKind),
-    MessageReply(MessageID, MessageKind),
+    Channel(ChannelValue),
+    ChannelModify(ChannelID, ChannelValue),
+    ChannelRemove(ChannelID),
+
+    Message(ChannelID, MessageValueRequest),
+    MessageReply(MessageID, MessageValueRequest),
     MessageReact(MessageID),
     MessageStar(MessageID),
-    MessageEdit(MessageID, Message),
-    MessageDelete(MessageID),
+    MessageModify(MessageID, MessageValueRequest),
+    MessageRemove(MessageID),
+
+    Emote(EmoteValueRequest),
+    EmoteRemove(EmoteID),
+
+    Stamp(StampValueRequest),
+    StampRemove(StampID),
+
+    Role(RoleValue),
+    RoleModify(RoleID, RoleValue),
+    RoleRemove(RoleID),
+
+    Invite(InviteValue),
+    InviteRemove(InviteID),
 
     ViewAccount,
     ViewChannel,
     ViewMessage(ChannelID),
+    ViewEmote,
+    ViewStamp,
+    ViewFile(FileID),
+    ViewRole,
+    ViewInvite,
 
     PollVote(MessageID, usize),
 
-    ConfigurationServer(Configuration),
-    //ConfigurationAccount,
+    Configuration(Configuration),
 
-    //
     AccountChannel(ChannelID),
     //AccountActivity(Option<AccountActivity>),
     AccountPresence(AccountPresence),
@@ -85,12 +109,32 @@ pub enum CommandServer {
     Leave,
     Nonce(Challenge),
 
+    Channel(Channel),
+    ChannelRemove(ChannelID),
+
     Message(Message),
-    MessageDelete(MessageID),
+    MessageRemove(MessageID),
+
+    Role(Role),
+    RoleRemove(RoleID),
+
+    Emote(Emote),
+    EmoteRemove(EmoteID),
+
+    Stamp(Stamp),
+    StampRemove(StampID),
+
+    Invite(Invite),
+    InviteRemove(InviteID),
 
     ViewAccount(BTreeMap<AccountID, Account>),
     ViewChannel(BTreeMap<ChannelID, Channel>),
     ViewMessage(ChannelID, BTreeMap<MessageID, Message>),
+    ViewEmote(BTreeMap<EmoteID, Emote>),
+    ViewStamp(BTreeMap<StampID, Stamp>),
+    ViewFile(FileID, File),
+    ViewRole(BTreeMap<RoleID, Role>),
+    ViewInvite(BTreeMap<InviteID, Invite>),
 
     PollVote(AccountID, MessageID, usize),
 

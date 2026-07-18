@@ -74,7 +74,7 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
         self.client.update(|client, command| match command {
             CommandServer::Message(message) => {
-                if let MessageKind::Text(text) = &message.kind
+                if let MessageValue::Text(text) = &message.value
                     && let Some(account) = client.get_local_account()
                     && message.is_mention(account)
                     && let Some(account) = message.account(&mut client.cache)
@@ -82,6 +82,14 @@ impl eframe::App for App {
                     self.system
                         .push_notification(account.name_nick.to_string(), text.to_string());
                 }
+            }
+            CommandServer::ViewFile(identifier, file) => {
+                if let Some(kind) = &file.kind {
+                    if kind.starts_with("image") {
+                        self.layout.load_texture_raw(ui, *identifier, &file.data);
+                    }
+                }
+                println!("got file: {:?}, {}", file.kind, file.name);
             }
             _ => {}
         });

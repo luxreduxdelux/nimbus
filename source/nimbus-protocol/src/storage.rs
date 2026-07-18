@@ -1,6 +1,7 @@
-use redb::{Database, ReadableDatabase, TableDefinition};
-use redb::{Key, ReadableTable};
-use redb::{ReadTransaction, WriteTransaction};
+use redb::{
+    Database, Key, ReadTransaction, ReadableDatabase, ReadableTable, TableDefinition,
+    WriteTransaction,
+};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
@@ -11,7 +12,13 @@ use std::ops::RangeBounds;
 
 use crate::account::*;
 use crate::channel::*;
+use crate::configuration::*;
+use crate::emote::*;
+use crate::file::*;
+use crate::invite::*;
 use crate::message::*;
+use crate::role::*;
+use crate::stamp::*;
 use crate::utility::*;
 
 //================================================================
@@ -20,9 +27,14 @@ type Table<'a, K> = TableDefinition<'a, K, Vec<u8>>;
 
 #[derive(Default, Serialize, Deserialize)]
 struct Meta {
+    configuration: Configuration,
     count_account: u64,
     count_channel: u64,
     count_message: HashMap<ChannelID, u64>,
+    count_emote: u64,
+    count_stamp: u64,
+    count_file: u64,
+    count_role: u64,
 }
 
 pub struct Storage {
@@ -36,11 +48,16 @@ impl Storage {
     const TABLE_ACCOUNT: Table<'_, AccountID> = TableDefinition::new("account");
     const TABLE_CHANNEL: Table<'_, ChannelID> = TableDefinition::new("channel");
     const TABLE_MESSAGE: Table<'_, MessageID> = TableDefinition::new("message");
+    const TABLE_EMOTE: Table<'_, EmoteID> = TableDefinition::new("emote");
+    const TABLE_STAMP: Table<'_, StampID> = TableDefinition::new("stamp");
+    const TABLE_FILE: Table<'_, FileID> = TableDefinition::new("file");
+    const TABLE_ROLE: Table<'_, RoleID> = TableDefinition::new("role");
+    const TABLE_INVITE: Table<'_, InviteID> = TableDefinition::new("invite");
 
     //================================================================
 
     pub fn new(path: &str) -> anyhow::Result<Self> {
-        //std::fs::remove_file(path);
+        std::fs::remove_file(path);
 
         let exist = std::fs::exists(path).unwrap_or_default();
         let data = Database::create(path)?;
@@ -48,21 +65,27 @@ impl Storage {
 
         if !exist {
             this.create_meta()?;
-            this.insert_channel(Channel::new(
+            this.insert_channel(
                 this.count_channel()?,
-                "foo".to_string(),
-                Channel::DEFAULT_INFO.to_string(),
-            ))?;
-            this.insert_channel(Channel::new(
+                Channel::new(
+                    this.count_channel()?,
+                    ChannelValue::new("foo".to_string(), ChannelValue::DEFAULT_INFO.to_string()),
+                ),
+            )?;
+            this.insert_channel(
                 this.count_channel()?,
-                "bar".to_string(),
-                Channel::DEFAULT_INFO.to_string(),
-            ))?;
-            this.insert_channel(Channel::new(
+                Channel::new(
+                    this.count_channel()?,
+                    ChannelValue::new("bar".to_string(), ChannelValue::DEFAULT_INFO.to_string()),
+                ),
+            )?;
+            this.insert_channel(
                 this.count_channel()?,
-                "baz".to_string(),
-                Channel::DEFAULT_INFO.to_string(),
-            ))?;
+                Channel::new(
+                    this.count_channel()?,
+                    ChannelValue::new("baz".to_string(), ChannelValue::DEFAULT_INFO.to_string()),
+                ),
+            )?;
         }
 
         Ok(this)
@@ -122,9 +145,25 @@ impl Storage {
 
     //================================================================
 
-    pub fn insert_channel(&self, channel: Channel) -> anyhow::Result<()> {
-        self.insert(Self::TABLE_CHANNEL, self.count_channel()?, channel)?;
+    pub fn insert_channel(&self, index: ChannelID, channel: Channel) -> anyhow::Result<()> {
+        self.insert(Self::TABLE_CHANNEL, index, channel)?;
         self.edit_meta(|meta| meta.count_channel += 1)
+    }
+
+    pub fn change_channel(&self, index: ChannelID, channel: Channel) -> anyhow::Result<()> {
+        if self.exist_channel(index)? {
+            self.insert(Self::TABLE_CHANNEL, index, channel)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn remove_channel(&self, index: ChannelID) -> anyhow::Result<()> {
+        self.remove(Self::TABLE_CHANNEL, index)
+    }
+
+    pub fn exist_channel(&self, index: ChannelID) -> anyhow::Result<bool> {
+        self.exist(Self::TABLE_CHANNEL, index)
     }
 
     pub fn get_all_channel(&self) -> anyhow::Result<BTreeMap<ChannelID, Channel>> {
@@ -137,17 +176,24 @@ impl Storage {
 
     //================================================================
 
-    pub fn insert_message(&self, message: Message) -> anyhow::Result<()> {
-        let channel = message.index;
-        self.insert(Self::TABLE_MESSAGE, message.index, message)?;
+    pub fn insert_message(&self, index: MessageID, message: Message) -> anyhow::Result<()> {
+        self.insert(Self::TABLE_MESSAGE, index, message)?;
         self.edit_meta(|meta| {
-            let meta = meta.count_message.entry(channel.0).or_default();
+            let meta = meta.count_message.entry(index.0).or_default();
             *meta += 1;
         })
     }
 
-    pub fn remove_message(&self, message: MessageID) -> anyhow::Result<()> {
-        self.remove(Self::TABLE_MESSAGE, message)
+    pub fn remove_message(&self, index: MessageID) -> anyhow::Result<()> {
+        self.remove(Self::TABLE_MESSAGE, index)
+    }
+
+    pub fn edit_message<F: Fn(&mut Message)>(
+        &self,
+        index: MessageID,
+        call: F,
+    ) -> anyhow::Result<()> {
+        self.edit(Self::TABLE_MESSAGE, index, call)
     }
 
     pub fn get_range_message(
@@ -169,7 +215,97 @@ impl Storage {
 
     //================================================================
 
-    fn insert<K: Key + Copy + Borrow<K::SelfType<'static>>, T: Serialize>(
+    pub fn insert_emote(&self, index: EmoteID, emote: Emote) -> anyhow::Result<()> {
+        self.insert(Self::TABLE_EMOTE, index, emote)?;
+        self.edit_meta(|meta| meta.count_emote += 1)
+    }
+
+    pub fn get_all_emote(&self) -> anyhow::Result<BTreeMap<EmoteID, Emote>> {
+        self.get_all(Self::TABLE_EMOTE)
+    }
+
+    pub fn count_emote(&self) -> anyhow::Result<u64> {
+        Ok(self.get_meta()?.count_emote)
+    }
+
+    //================================================================
+
+    pub fn insert_stamp(&self, index: StampID, stamp: Stamp) -> anyhow::Result<()> {
+        self.insert(Self::TABLE_STAMP, index, stamp)?;
+        self.edit_meta(|meta| meta.count_stamp += 1)
+    }
+
+    pub fn get_all_stamp(&self) -> anyhow::Result<BTreeMap<StampID, Stamp>> {
+        self.get_all(Self::TABLE_STAMP)
+    }
+
+    pub fn count_stamp(&self) -> anyhow::Result<u64> {
+        Ok(self.get_meta()?.count_stamp)
+    }
+
+    //================================================================
+
+    pub fn insert_file(&self, index: FileID, file: File) -> anyhow::Result<()> {
+        self.insert(Self::TABLE_FILE, index, file)?;
+        self.edit_meta(|meta| meta.count_file += 1)
+    }
+
+    pub fn get_file(&self, file: FileID) -> anyhow::Result<Option<File>> {
+        self.get(Self::TABLE_FILE, file)
+    }
+
+    pub fn count_file(&self) -> anyhow::Result<u64> {
+        Ok(self.get_meta()?.count_file)
+    }
+
+    //================================================================
+
+    pub fn insert_role(&self, index: RoleID, role: Role) -> anyhow::Result<()> {
+        self.insert(Self::TABLE_ROLE, index, role)?;
+        self.edit_meta(|meta| meta.count_role += 1)
+    }
+
+    pub fn change_role(&self, index: RoleID, role: Role) -> anyhow::Result<()> {
+        if self.exist_role(index)? {
+            self.insert(Self::TABLE_ROLE, index, role)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn remove_role(&self, index: RoleID) -> anyhow::Result<()> {
+        self.remove(Self::TABLE_ROLE, index)
+    }
+
+    pub fn exist_role(&self, index: ChannelID) -> anyhow::Result<bool> {
+        self.exist(Self::TABLE_ROLE, index)
+    }
+
+    pub fn get_all_role(&self) -> anyhow::Result<BTreeMap<RoleID, Role>> {
+        self.get_all(Self::TABLE_ROLE)
+    }
+
+    pub fn count_role(&self) -> anyhow::Result<RoleID> {
+        Ok(self.get_meta()?.count_role)
+    }
+
+    //================================================================
+
+    pub fn insert_invite(&self, index: InviteID, invite: Invite) -> anyhow::Result<()> {
+        self.insert(Self::TABLE_INVITE, index, invite)
+    }
+
+    pub fn remove_invite(&self, index: InviteID) -> anyhow::Result<()> {
+        self.remove(Self::TABLE_INVITE, index)
+    }
+
+    pub fn get_all_invite(&self) -> anyhow::Result<BTreeMap<InviteID, Invite>> {
+        self.get_all(Self::TABLE_INVITE)
+    }
+
+    //================================================================
+
+    fn insert<K: Key + Clone + Borrow<K::SelfType<'static>>, T: Serialize>(
         &self,
         table: Table<K>,
         index: K,
@@ -177,35 +313,53 @@ impl Storage {
     ) -> anyhow::Result<()> {
         self.write(|txn| {
             let mut table = txn.open_table(table)?;
-            table.insert(index, serialize(&value)?)?;
+            table.insert(index.clone(), serialize(&value)?)?;
             Ok(())
         })?;
 
         Ok(())
     }
 
-    fn remove<K: Key + Copy + Borrow<K::SelfType<'static>>>(
+    fn remove<K: Key + Clone + Borrow<K::SelfType<'static>>>(
         &self,
         table: Table<K>,
         index: K,
     ) -> anyhow::Result<()> {
         self.write(|txn| {
             let mut table = txn.open_table(table)?;
-            table.remove(index)?;
+            table.remove(index.clone())?;
             Ok(())
         })?;
 
         Ok(())
     }
 
-    fn get<K: Key + Copy + Borrow<K::SelfType<'static>>, V: for<'a> Deserialize<'a>>(
+    fn exist<K: Key + Clone + Borrow<K::SelfType<'static>>>(
+        &self,
+        table: Table<K>,
+        index: K,
+    ) -> anyhow::Result<bool> {
+        self.read(|txn| {
+            if let Ok(table) = txn.open_table(table) {
+                if let Some(_) = table.get(index.clone())? {
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        })
+    }
+
+    fn get<K: Key + Clone + Borrow<K::SelfType<'static>>, V: for<'a> Deserialize<'a>>(
         &self,
         table: Table<K>,
         index: K,
     ) -> anyhow::Result<Option<V>> {
         self.read(|txn| {
             if let Ok(table) = txn.open_table(table) {
-                if let Some(value) = table.get(index)? {
+                if let Some(value) = table.get(index.clone())? {
                     Ok(Some(deserialize(&value.value())?))
                 } else {
                     Ok(None)
@@ -269,7 +423,7 @@ impl Storage {
 
     fn edit<
         F: Fn(&mut V),
-        K: Key + Copy + Borrow<K::SelfType<'static>>,
+        K: Key + Clone + Borrow<K::SelfType<'static>>,
         V: Serialize + for<'a> Deserialize<'a>,
     >(
         &self,
@@ -280,7 +434,7 @@ impl Storage {
         self.write(|txn| {
             let mut table = txn.open_table(table)?;
 
-            let value = if let Some(value) = table.get(index)? {
+            let value = if let Some(value) = table.get(index.clone())? {
                 let mut value = deserialize(&value.value())?;
                 call(&mut value);
                 Some(serialize(&value)?)
@@ -289,7 +443,7 @@ impl Storage {
             };
 
             if let Some(value) = value {
-                table.insert(index, value)?;
+                table.insert(index.clone(), value)?;
             }
 
             Ok(())

@@ -27,7 +27,7 @@ impl Default for Configuration {
 
 impl Configuration {
     const LIMIT_TEXT_SIZE: usize = 256;
-    const LIMIT_FILE_SIZE: usize = 1_000_000 * 10;
+    const LIMIT_FILE_SIZE: usize = 16;
     const LIMIT_POLL_SIZE: usize = 16;
     const DEFAULT_NAME: &str = "Nimbus Server";
     const DEFAULT_INFO: &str = "A default Nimbus server, for the people, by the people.\nhttps://github.com/luxreduxdelux/nimbus";

@@ -40,7 +40,7 @@ star    = "Star"
 delete  = "Delete"
 file    = "File"
 poll    = "Poll"
-sticker = "Sticker"
+stamp   = "Stamp"
 
 [setup_account]
 user_icon       = "User Icon"

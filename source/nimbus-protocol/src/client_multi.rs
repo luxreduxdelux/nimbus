@@ -20,11 +20,9 @@ impl ClientMulti {
         Ok(())
     }
 
-    pub fn send_all(&self, command: CommandClient) -> anyhow::Result<()> {
+    pub fn send_all(&self, command: CommandClient) {
         for c in &self.client {
-            c.send(command.clone())?;
+            c.send(command.clone());
         }
-
-        Ok(())
     }
 }
