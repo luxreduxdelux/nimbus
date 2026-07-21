@@ -31,16 +31,15 @@ pub struct User {
 
 impl User {
     const PATH_FILE: &str = "client.data";
-}
 
-impl Into<AccountConnect> for User {
-    fn into(self) -> AccountConnect {
+    pub fn into_account_connect(&self, invite: Option<String>) -> AccountConnect {
         AccountConnect {
             key: self.identifier.public_key(),
             name_nick: self.name_nick.clone(),
             name_user: self.name_user.clone(),
             info: self.info.clone(),
             icon: self.icon.clone(),
+            invite,
         }
     }
 }

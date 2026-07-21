@@ -24,13 +24,13 @@ enum SetupIndex {
 #[derive(Default, Copy, Clone, PartialEq, Eq)]
 enum ServerIndex {
     #[default]
-    General,
     Account,
     Channel,
     Emote,
     Stamp,
     Role,
     Invite,
+    General,
 }
 
 #[derive(Default, Copy, Clone, PartialEq, Eq)]
@@ -51,7 +51,7 @@ enum FriendIndex {
 #[derive(Default, Clone)]
 pub struct Layout {
     modal: Option<fn(&mut App, &mut egui::Ui)>,
-    modal_address: String,
+    modal_invite: String,
     modal_code: String,
     modal_file: FileID,
     modal_poll: PollValue,
@@ -60,6 +60,7 @@ pub struct Layout {
 
     modal_server_prompt: ServerPrompt,
     //modal_server_account: AccountValue,
+    modal_server_configuration: Configuration,
     modal_server_channel: ChannelValue,
     modal_server_emote: EmoteValueRequest,
     modal_server_stamp: StampValueRequest,
@@ -109,6 +110,14 @@ impl Layout {
     #[rustfmt::skip]    const IMAGE_ENTER          : ImageSource<'_> = egui::include_image!("../asset/enter.svg");
     #[rustfmt::skip]    const IMAGE_LEAVE          : ImageSource<'_> = egui::include_image!("../asset/leave.svg");
     #[rustfmt::skip]    const IMAGE_LOGO           : ImageSource<'_> = egui::include_image!("../asset/logo.svg");
+    #[rustfmt::skip]    const IMAGE_HALO           : ImageSource<'_> = egui::include_image!("../asset/halo.svg");
+    #[rustfmt::skip]    const IMAGE_KEY            : ImageSource<'_> = egui::include_image!("../asset/key.svg");
+    #[rustfmt::skip]    const IMAGE_INFO           : ImageSource<'_> = egui::include_image!("../asset/info.svg");
+    #[rustfmt::skip]    const IMAGE_GAME           : ImageSource<'_> = egui::include_image!("../asset/game.svg");
+    #[rustfmt::skip]    const IMAGE_VIDEO          : ImageSource<'_> = egui::include_image!("../asset/video.svg");
+    #[rustfmt::skip]    const IMAGE_AUDIO          : ImageSource<'_> = egui::include_image!("../asset/audio.svg");
+    #[rustfmt::skip]    const IMAGE_APP            : ImageSource<'_> = egui::include_image!("../asset/app.svg");
+    #[rustfmt::skip]    const IMAGE_TIME           : ImageSource<'_> = egui::include_image!("../asset/time.svg");
     #[rustfmt::skip]    const IMAGE_DOT            : ImageSource<'_> = egui::include_image!("../asset/dot.svg");
     #[rustfmt::skip]    const IMAGE_PLUS           : ImageSource<'_> = egui::include_image!("../asset/plus.svg");
     #[rustfmt::skip]    const IMAGE_ATTACHMENT     : ImageSource<'_> = egui::include_image!("../asset/attachment.svg");
@@ -183,14 +192,20 @@ impl Layout {
                 .max_size(Self::PANEL_R_SIZE)
                 .resizable(false)
                 .show(ui, |ui| {
-                    if let Some(view) = Self::get_client_mutable(app).cache.get_view_account() {
+                    if let Some(view) = Self::get_client_mutable(app)
+                        .cache
+                        .get_view_account()
+                        .cloned()
+                    {
+                        ui.add_space(4.0);
+
                         for (_, account) in view {
                             Self::draw_pop_up(
                                 "pop_account",
-                                Self::draw_account_side(ui, account),
+                                Self::draw_account_side(ui, &account),
                                 ui,
                                 |ui| {
-                                    Self::draw_account_main(ui, account);
+                                    Self::draw_account_main(ui, app, &account);
                                 },
                             );
                         }
@@ -283,22 +298,133 @@ impl Layout {
         }
     }
 
-    fn draw_account_main(ui: &mut egui::Ui, account: &Account) {
+    fn draw_account_main(ui: &mut egui::Ui, app: &mut App, account: &Account) {
+        let color = account.halo_color();
+        let color = egui::Color32::from_rgb(color.r, color.g, color.b);
+
         ui.horizontal(|ui| {
             ui.add(Self::image(Self::IMAGE_TEST, Vec2::splat(96.0)).corner_radius(96.0));
 
             ui.vertical(|ui| {
-                ui.label(&account.name_nick);
-                ui.label(&account.name_user);
+                ui.add_space(8.0);
+                ui.label(RichText::new(&account.name_nick).strong().size(24.0));
+
+                ui.horizontal(|ui| {
+                    ui.add(Self::image(Self::IMAGE_HALO, Vec2::splat(48.0)).tint(color));
+
+                    ui.vertical(|ui| {
+                        Self::draw_image_label(
+                            ui,
+                            Self::image(Self::IMAGE_ACCOUNT, Vec2::splat(24.0)),
+                            &account.name_user,
+                        );
+                        Self::draw_image_label(
+                            ui,
+                            Self::image(Self::IMAGE_KEY, Vec2::splat(24.0)),
+                            &account.halo_short(),
+                        );
+                    });
+                })
+                .response
+                .on_hover_ui(|ui| {
+                    ui.label(account.halo());
+                    ui.button("Copy Halo");
+                    ui.hyperlink_to("What's a halo?", "https://github.com/luxreduxdelux/nimbus/wiki/Nimbus-Documentation#user-halo");
+                });
             });
         });
 
-        ui.separator();
+        /*
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.add(Self::image(Self::IMAGE_AUDIO, Vec2::splat(32.0)));
 
-        if account.info.is_empty() {
-            ui.label(RichText::new("No user info.").weak());
-        } else {
-            ui.label(&account.info);
+                // TO-DO use LayoutJob for this
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Listening").strong());
+                    ui.label("Spotify");
+                });
+            });
+
+            ui.horizontal(|ui| {
+                ui.add(Self::image(Self::IMAGE_TEST, Vec2::splat(64.0)));
+
+                ui.vertical(|ui| {
+                    ui.label("Aphex Twin");
+                    ui.label("...I Care Because You Do");
+                    ui.label("Alberto Balsalm");
+
+                    let h = ui.spacing().interact_size.y;
+
+                    ui.horizontal(|ui| {
+                        ui.add_sized([0.0, h], egui::Label::new("03:00"));
+                        ui.add_sized([192.0, h], egui::ProgressBar::new(0.0));
+                        ui.add_sized([0.0, h], egui::Label::new("03:00"));
+                    });
+
+                    /*
+                    ui.horizontal(|ui| {
+                        ui.add(Self::image(Self::IMAGE_TIME, Vec2::splat(32.0)));
+                        ui.label("02:00:00");
+                    });
+                    */
+
+                    ui.add_sized([192.0, 0.0], egui::Button::new("Do Thing"));
+                });
+            });
+        });
+        */
+
+        if !account.info.is_empty() {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                Self::draw_image_label(
+                    ui,
+                    Self::image(Self::IMAGE_INFO, Vec2::splat(24.0)),
+                    "Info",
+                );
+                ui.label(&account.info);
+            });
+        }
+
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            Self::draw_image_label(
+                ui,
+                Self::image(Self::IMAGE_ACCOUNT, Vec2::splat(24.0)),
+                "Role",
+            );
+
+            egui::ScrollArea::vertical()
+                .max_height(48.0)
+                .show(ui, |ui| {
+                    for x in 0..16 {
+                        Self::draw_image_label(
+                            ui,
+                            Self::image(Self::IMAGE_DOT, Vec2::splat(16.0)),
+                            &format!("Role {x}"),
+                        );
+                    }
+                });
+        });
+
+        if !account.role.is_empty() {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                Self::draw_image_label(
+                    ui,
+                    Self::image(Self::IMAGE_ACCOUNT, Vec2::splat(24.0)),
+                    "Role",
+                );
+
+                ui.horizontal_wrapped(|ui| {
+                    ui.set_max_width(256.0);
+
+                    for role in &account.role {
+                        if let Some(role) = Self::get_client_mutable(app).cache.get_role(*role) {
+                            ui.add(Self::image(Self::IMAGE_DOT, Vec2::splat(16.0)));
+                            ui.label(&role.value.name);
+                        }
+                    }
+                });
+            });
         }
     }
 
@@ -419,6 +545,64 @@ impl Layout {
                                                 }
                                                 MessageValue::Text(text) => {
                                                     ui.label(text);
+
+                                                    if let Some(embed) = &message.embed {
+                                                        egui::Frame::group(ui.style()).show(
+                                                            ui,
+                                                            |ui| {
+                                                                if let Some(name) = &embed.name {
+                                                                    ui.label(
+                                                                        RichText::new(name)
+                                                                            .strong(),
+                                                                    );
+                                                                }
+                                                                if let Some(body) = &embed.body {
+                                                                    ui.label(body);
+                                                                }
+
+                                                                if let Some(file) = &embed.file {
+                                                                    if let Some(image) = app
+                                                                        .layout
+                                                                        .image_cache
+                                                                        .get(&file.index)
+                                                                    {
+                                                                        if ui
+                                                                .add(
+                                                                    Self::image(
+                                                                        image.into(),
+                                                                        Vec2::new(256.0, 256.0),
+                                                                    )
+                                                                    .sense(egui::Sense::click()),
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                app.layout.modal_file = file.index;
+                                                                app.layout.modal =
+                                                                    Some(Self::modal_image);
+                                                            };
+                                                                    } else {
+                                                                        client
+                                                                            .cache
+                                                                            .get_file(file.index);
+                                                                    }
+                                                                }
+
+                                                                if let Some(link) = &embed.link {
+                                                                    ui.separator();
+
+                                                                    if let Some(site) = &embed.site
+                                                                    {
+                                                                        ui.hyperlink_to(site, link);
+                                                                    } else {
+                                                                        ui.hyperlink_to(
+                                                                            "Go To Site",
+                                                                            link,
+                                                                        );
+                                                                    }
+                                                                }
+                                                            },
+                                                        );
+                                                    }
                                                 }
                                                 MessageValue::File(file) => {
                                                     if client.cache.get_file_state(file.index)
@@ -986,31 +1170,6 @@ impl Layout {
         ui.label(t!("setup_input.edit_message"));
     }
 
-    fn draw_server_setup_general(app: &mut App, ui: &mut egui::Ui) {
-        ui.label("Server Name");
-        ui.text_edit_singleline(&mut "");
-
-        ui.label("Server Info");
-        ui.text_edit_singleline(&mut "");
-    }
-
-    fn draw_server_setup_account(app: &mut App, ui: &mut egui::Ui) {
-        let client = &mut app.client.client[app.layout.index_server.unwrap()];
-
-        if let Some(view) = client.cache.get_view_account() {
-            for (i, account) in view {
-                ui.horizontal(|ui| {
-                    Self::draw_button_image_label(ui, Self::IMAGE_CLOSE, "Remove");
-                    ui.add(
-                        Self::image(Self::IMAGE_TEST, Self::BUTTON_IMAGE_SCALE)
-                            .corner_radius(Self::BUTTON_IMAGE_SCALE.x),
-                    );
-                    ui.label(&account.name_nick);
-                });
-            }
-        }
-    }
-
     fn draw_modal_editor<
         F: FnMut(&mut App),
         G: FnMut(&mut App, &mut egui::Ui),
@@ -1046,6 +1205,16 @@ impl Layout {
             },
         );
     }
+
+    fn draw_server_setup_general(app: &mut App, ui: &mut egui::Ui) {
+        ui.label("Server Name");
+        ui.text_edit_singleline(&mut app.layout.modal_server_configuration.name);
+
+        ui.label("Server Info");
+        ui.text_edit_singleline(&mut app.layout.modal_server_configuration.info);
+    }
+
+    fn draw_server_setup_account(app: &mut App, ui: &mut egui::Ui) {}
 
     fn draw_server_setup_channel(app: &mut App, ui: &mut egui::Ui) {
         let mut remove = None;
@@ -1101,78 +1270,128 @@ impl Layout {
         );
     }
 
-    fn draw_server_setup_emote(app: &mut App, ui: &mut egui::Ui) {}
-
-    fn draw_server_setup_stamp(app: &mut App, ui: &mut egui::Ui) {
+    fn draw_server_setup_emote(app: &mut App, ui: &mut egui::Ui) {
         let mut remove = None;
         let mut modify = None;
 
-        if let Some(view) = Self::get_client_mutable(app).cache.get_view_role() {
-            for (i, role) in view {
-                let color = egui::Color32::from_rgb(
-                    role.value.color.r,
-                    role.value.color.g,
-                    role.value.color.b,
-                );
-
+        if let Some(view) = Self::get_client_mutable(app).cache.get_view_emote() {
+            for (i, emote) in view {
                 ui.horizontal(|ui| {
                     if Self::draw_button_image(ui, Self::IMAGE_DELETE).clicked() {
                         remove = Some(*i);
                     }
                     if Self::draw_button_image(ui, Self::IMAGE_EDIT).clicked() {
-                        modify = Some((*i, role.value.clone()));
+                        modify = Some((*i, emote.value.clone()));
                     }
-                    ui.add(Self::image(Self::IMAGE_DOT, Vec2::splat(16.0)).tint(color));
-                    ui.label(&role.value.name);
+                    // TO-DO add image
+                    ui.label(&emote.value.name);
                 });
             }
         }
 
         if let Some(i) = remove {
-            Self::get_client_mutable(app).send(CommandClient::RoleRemove(i));
+            Self::get_client_mutable(app).send(CommandClient::EmoteRemove(i));
         }
-        if let Some((i, role)) = modify {
+        if let Some((i, emote)) = modify {
             app.layout.modal_server_prompt = ServerPrompt::Modify(i);
-            app.layout.modal_server_role = role.clone();
+            //app.layout.modal_server_stamp = stamp.clone();
         }
 
         Self::draw_modal_editor(
             app,
             ui,
-            "Create Role",
-            "Role",
+            "Create Emote",
+            "Emote",
             |app| {
                 app.layout.modal_server_role = RoleValue::default();
             },
             |app, ui| {
-                ui.label("Role Name");
-                ui.text_edit_singleline(&mut app.layout.modal_server_role.name);
+                ui.label("Emote Name");
+                ui.text_edit_singleline(&mut app.layout.modal_server_emote.name);
 
-                let mut color = egui::Color32::from_rgb(
-                    app.layout.modal_server_role.color.r,
-                    app.layout.modal_server_role.color.g,
-                    app.layout.modal_server_role.color.b,
-                );
-
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut color,
-                    egui::color_picker::Alpha::Opaque,
-                );
-
-                app.layout.modal_server_role.color = Color::new(color.r(), color.g(), color.b());
+                if ui.button("Select Emote Icon").clicked()
+                    && let Ok(Some(data)) = Self::pick_file()
+                {
+                    app.layout.modal_server_emote.data = data;
+                }
             },
             |app, index| {
-                Self::get_client(app).send(CommandClient::RoleModify(
-                    index,
-                    app.layout.modal_server_role.clone(),
-                ));
+                //Self::get_client(app).send(CommandClient::RoleModify(
+                //    index,
+                //    app.layout.modal_server_role.clone(),
+                //));
             },
             |app| {
                 Self::get_client(app)
-                    .send(CommandClient::Role(app.layout.modal_server_role.clone()));
+                    .send(CommandClient::Emote(app.layout.modal_server_emote.clone()));
             },
         );
+    }
+
+    fn draw_server_setup_stamp(app: &mut App, ui: &mut egui::Ui) {
+        let mut remove = None;
+        let mut modify = None;
+
+        if let Some(view) = Self::get_client_mutable(app).cache.get_view_stamp() {
+            for (i, stamp) in view {
+                ui.horizontal(|ui| {
+                    if Self::draw_button_image(ui, Self::IMAGE_DELETE).clicked() {
+                        remove = Some(*i);
+                    }
+                    if Self::draw_button_image(ui, Self::IMAGE_EDIT).clicked() {
+                        modify = Some((*i, stamp.value.clone()));
+                    }
+                    // TO-DO add image
+                    ui.label(&stamp.value.name);
+                });
+            }
+        }
+
+        if let Some(i) = remove {
+            Self::get_client_mutable(app).send(CommandClient::StampRemove(i));
+        }
+        if let Some((i, stamp)) = modify {
+            app.layout.modal_server_prompt = ServerPrompt::Modify(i);
+            //app.layout.modal_server_stamp = stamp.clone();
+        }
+
+        Self::draw_modal_editor(
+            app,
+            ui,
+            "Create Stamp",
+            "Stamp",
+            |app| {
+                app.layout.modal_server_role = RoleValue::default();
+            },
+            |app, ui| {
+                ui.label("Stamp Name");
+                ui.text_edit_singleline(&mut app.layout.modal_server_stamp.name);
+
+                if ui.button("Select Stamp Icon").clicked()
+                    && let Ok(Some(data)) = Self::pick_file()
+                {
+                    app.layout.modal_server_stamp.data = data;
+                }
+            },
+            |app, index| {
+                //Self::get_client(app).send(CommandClient::RoleModify(
+                //    index,
+                //    app.layout.modal_server_role.clone(),
+                //));
+            },
+            |app| {
+                Self::get_client(app)
+                    .send(CommandClient::Stamp(app.layout.modal_server_stamp.clone()));
+            },
+        );
+    }
+
+    fn pick_file() -> anyhow::Result<Option<Vec<u8>>> {
+        if let Some(file) = rfd::FileDialog::new().set_title("Select File").pick_file() {
+            Ok(Some(std::fs::read(file)?))
+        } else {
+            Ok(None)
+        }
     }
 
     fn draw_server_setup_role(app: &mut App, ui: &mut egui::Ui) {
@@ -1446,26 +1665,34 @@ impl Layout {
             ui.heading(t!("general.join"));
             ui.separator();
 
-            Self::draw_edit_mono(ui, &t!("server.address"), &mut app.layout.modal_address);
-            Self::draw_edit_mono(ui, &t!("server.code"), &mut app.layout.modal_code);
+            ui.label(t!("server.invite"));
+            ui.add(
+                egui::TextEdit::singleline(&mut app.layout.modal_invite)
+                    .hint_text("join#example.com"),
+            );
+
+            ui.hyperlink_to(
+                "How do I create my own server?",
+                "https://github.com/luxreduxdelux/nimbus/wiki/Nimbus-Documentation#server-creation",
+            );
 
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.button(t!("general.join")).clicked() {
                     /* TO-DO
                     app.client.client.push(Client::new(
-                        app.layout.modal_address.clone(),
+                        app.layout.modal_invite.clone(),
                         app.user.identifier.key,
                         app.user.clone().into(),
                     ));
                     */
 
                     app.layout.modal = None;
-                    app.layout.modal_address.clear();
+                    app.layout.modal_invite.clear();
                 }
                 if ui.button(t!("general.close")).clicked() {
                     app.layout.modal = None;
-                    app.layout.modal_address.clear();
+                    app.layout.modal_invite.clear();
                 }
             });
         });
@@ -1477,13 +1704,18 @@ impl Layout {
             ui.set_min_size([1024.0 - 64.0, 768.0 - 64.0].into());
 
             ui.horizontal(|ui| {
-                Self::draw_selectable(ui, &mut app.layout.modal_server, ServerIndex::General, Self::IMAGE_SERVER,  "General");
+                if Self::draw_button_image(ui, Self::IMAGE_CLOSE).clicked() {
+                    app.layout.modal = None;
+                };
                 Self::draw_selectable(ui, &mut app.layout.modal_server, ServerIndex::Account, Self::IMAGE_ACCOUNT, "Account");
                 Self::draw_selectable(ui, &mut app.layout.modal_server, ServerIndex::Channel, Self::IMAGE_CHANNEL, "Channel");
                 Self::draw_selectable(ui, &mut app.layout.modal_server, ServerIndex::Emote,   Self::IMAGE_EMOTE,   "Emote");
-                Self::draw_selectable(ui, &mut app.layout.modal_server, ServerIndex::Stamp, Self::IMAGE_STAMP, "Stamp");
+                Self::draw_selectable(ui, &mut app.layout.modal_server, ServerIndex::Stamp,   Self::IMAGE_STAMP,   "Stamp");
                 Self::draw_selectable(ui, &mut app.layout.modal_server, ServerIndex::Role,    Self::IMAGE_ROLE,    "Role");
                 Self::draw_selectable(ui, &mut app.layout.modal_server, ServerIndex::Invite,  Self::IMAGE_INVITE,  "Invite");
+                if Self::draw_selectable(ui, &mut app.layout.modal_server, ServerIndex::General, Self::IMAGE_SERVER,  "General").clicked() {
+                    app.layout.modal_server_configuration = Self::get_client(app).server.configuration.clone();
+                };
             });
 
             ui.separator();
@@ -1494,29 +1726,14 @@ impl Layout {
                 .auto_shrink([false, false])
                 .max_height(h)
                 .show(ui, |ui| match app.layout.modal_server {
-                    ServerIndex::General => Self::draw_server_setup_general(app, ui),
                     ServerIndex::Account => Self::draw_server_setup_account(app, ui),
                     ServerIndex::Channel => Self::draw_server_setup_channel(app, ui),
                     ServerIndex::Emote   => Self::draw_server_setup_emote(app, ui),
-                    ServerIndex::Stamp => Self::draw_server_setup_stamp(app, ui),
+                    ServerIndex::Stamp   => Self::draw_server_setup_stamp(app, ui),
                     ServerIndex::Role    => Self::draw_server_setup_role(app, ui),
                     ServerIndex::Invite  => Self::draw_server_setup_invite(app, ui),
+                    ServerIndex::General => Self::draw_server_setup_general(app, ui),
                 });
-
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                if Self::draw_button_image_label(ui, Self::IMAGE_APPLY, &t!("general.apply")).clicked() {
-                    app.user = app.layout.setup_user.clone();
-                    app.layout.modal = None;
-                }
-                if Self::draw_button_image_label(ui, Self::IMAGE_RESET, &t!("general.reset")).clicked() {
-                    app.layout.setup_user = app.user.clone();
-                }
-                if Self::draw_button_image_label(ui, Self::IMAGE_CLOSE, &t!("general.close")).clicked() {
-                    app.layout.modal = None;
-                }
-            });
         });
     }
 

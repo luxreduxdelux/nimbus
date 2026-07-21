@@ -1,4 +1,5 @@
 /target
+panic_*
 client.data
 server.data
 nimbus.sublime-workspace

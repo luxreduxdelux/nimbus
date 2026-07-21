@@ -150,36 +150,46 @@ impl App {
                             .await?;
                     }
                     CommandClient::Message(channel, message) => {
-                        let mut app = app.lock().await;
-                        let value = MessageValue::from_request(message.clone(), &mut app.storage)?;
+                        let mut app_l = app.lock().await;
+                        let value =
+                            MessageValue::from_request(message.clone(), &mut app_l.storage)?;
                         let message = Message::new(
-                            app.storage.count_message(*channel)?,
+                            app_l.storage.count_message(*channel)?,
                             Some(index),
                             value,
                             None,
                         )?;
 
-                        app.storage.insert_message(
-                            app.storage.count_message(*channel)?,
+                        if let MessageValue::Text(text) = &message.value
+                            && let Ok(list) = get_link_list(text)
+                            && let Some(link) = list.first().cloned()
+                        {
+                            let app = app.clone();
+                            let index = message.index;
+
+                            tokio::spawn(async move {
+                                // TO-DO persist embed to storage, use embed table for embed cache
+                                let mut app_l = app.lock().await;
+                                let embed = MessageEmbed::new(&link, &mut app_l.storage).await?;
+                                app_l
+                                    .send_all(CommandServer::MessageEmbed(index, embed))
+                                    .await?;
+
+                                Ok::<(), anyhow::Error>(())
+                            });
+                        }
+
+                        app_l.storage.insert_message(
+                            app_l.storage.count_message(*channel)?,
                             message.clone(),
                         )?;
-                        app.send_all(CommandServer::Message(message)).await?;
+                        app_l.send_all(CommandServer::Message(message)).await?;
                     }
                     CommandClient::MessageRemove(message) => {
                         let app = app.lock().await;
 
                         app.storage.remove_message(*message)?;
                         app.send_all(CommandServer::MessageRemove(*message)).await?;
-                    }
-                    CommandClient::Stamp(stamp) => {
-                        let mut app = app.lock().await;
-                        let stamp = Stamp::new(
-                            app.storage.count_role()?,
-                            StampValue::from_request(stamp.clone(), &mut app.storage)?,
-                        );
-
-                        app.storage.insert_stamp(stamp.index, stamp.clone())?;
-                        app.send_all(CommandServer::Stamp(stamp)).await?;
                     }
                     CommandClient::Role(role) => {
                         let app = app.lock().await;
@@ -201,7 +211,23 @@ impl App {
                         app.storage.remove_role(*identifier)?;
                         app.send_all(CommandServer::RoleRemove(*identifier)).await?;
                     }
+                    CommandClient::Stamp(stamp) => {
+                        let mut app = app.lock().await;
+                        let stamp = Stamp::new(
+                            app.storage.count_stamp()?,
+                            StampValue::from_request(stamp.clone(), &mut app.storage)?,
+                        );
 
+                        app.storage.insert_stamp(stamp.index, stamp.clone())?;
+                        app.send_all(CommandServer::Stamp(stamp)).await?;
+                    }
+                    CommandClient::StampRemove(identifier) => {
+                        let app = app.lock().await;
+
+                        app.storage.remove_stamp(*identifier)?;
+                        app.send_all(CommandServer::StampRemove(*identifier))
+                            .await?;
+                    }
                     CommandClient::Invite(invite) => {
                         let app = app.lock().await;
                         let invite = Invite::new(invite.clone());
@@ -239,6 +265,18 @@ impl App {
 
                         app.send_all(CommandServer::ViewMessage(*channel, view))
                             .await?;
+                    }
+                    CommandClient::ViewEmote => {
+                        let app = app.lock().await;
+                        let view = app.storage.get_all_emote()?;
+
+                        app.send_all(CommandServer::ViewEmote(view)).await?;
+                    }
+                    CommandClient::ViewStamp => {
+                        let app = app.lock().await;
+                        let view = app.storage.get_all_stamp()?;
+
+                        app.send_all(CommandServer::ViewStamp(view)).await?;
                     }
                     CommandClient::ViewFile(identifier) => {
                         let app = app.lock().await;
@@ -396,9 +434,7 @@ impl Drop for App {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    unsafe {
-        std::env::set_var("RUST_BACKTRACE", "1");
-    }
+    nimbus_protocol::utility::set_panic_hook("server");
 
     match Command::new() {
         Command::Run(argument) => {

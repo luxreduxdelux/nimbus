@@ -16,9 +16,7 @@ use crate::app::*;
 
 #[tokio::main]
 async fn main() -> eframe::Result {
-    unsafe {
-        std::env::set_var("RUST_BACKTRACE", "1");
-    }
+    nimbus_protocol::utility::set_panic_hook("client");
 
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../asset/icon.png")).unwrap();
 
@@ -40,10 +38,3 @@ async fn main() -> eframe::Result {
         }),
     )
 }
-
-/*
-fn main() {
-    let markdown = Token::parse("#test");
-    println!("{markdown:#?}");
-}
-*/

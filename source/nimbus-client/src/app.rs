@@ -56,7 +56,7 @@ impl App {
             client.client.push(Client::new(
                 address.to_string(),
                 user.identifier.key,
-                user.clone().into(),
+                user.into_account_connect(None),
                 Some(call),
             ));
         }

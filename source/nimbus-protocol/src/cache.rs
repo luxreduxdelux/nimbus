@@ -60,6 +60,12 @@ impl Cache {
                 let entry = self.view_message.value.entry(index.0).or_default();
                 entry.remove(index);
             }
+            CommandServer::MessageEmbed(index, embed) => {
+                let entry = self.view_message.value.entry(index.0).or_default();
+                if let Some(message) = entry.get_mut(index) {
+                    message.embed = Some(embed.clone());
+                }
+            }
             CommandServer::Role(data) => {
                 self.view_role.value.insert(data.index, data.clone());
             }

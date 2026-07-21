@@ -69,21 +69,10 @@ impl Storage {
                 this.count_channel()?,
                 Channel::new(
                     this.count_channel()?,
-                    ChannelValue::new("foo".to_string(), ChannelValue::DEFAULT_INFO.to_string()),
-                ),
-            )?;
-            this.insert_channel(
-                this.count_channel()?,
-                Channel::new(
-                    this.count_channel()?,
-                    ChannelValue::new("bar".to_string(), ChannelValue::DEFAULT_INFO.to_string()),
-                ),
-            )?;
-            this.insert_channel(
-                this.count_channel()?,
-                Channel::new(
-                    this.count_channel()?,
-                    ChannelValue::new("baz".to_string(), ChannelValue::DEFAULT_INFO.to_string()),
+                    ChannelValue::new(
+                        ChannelValue::DEFAULT_NAME.to_string(),
+                        ChannelValue::DEFAULT_INFO.to_string(),
+                    ),
                 ),
             )?;
         }
@@ -101,6 +90,12 @@ impl Storage {
 
     fn edit_meta<F: Fn(&mut Meta)>(&self, call: F) -> anyhow::Result<()> {
         self.edit(Self::TABLE_META, 0, call)
+    }
+
+    //================================================================
+
+    fn get_configuration(&self) -> anyhow::Result<Meta> {
+        Ok(self.get(Self::TABLE_META, 0)?.unwrap_or_default())
     }
 
     //================================================================
@@ -220,6 +215,10 @@ impl Storage {
         self.edit_meta(|meta| meta.count_emote += 1)
     }
 
+    pub fn remove_emote(&self, index: EmoteID) -> anyhow::Result<()> {
+        self.remove(Self::TABLE_EMOTE, index)
+    }
+
     pub fn get_all_emote(&self) -> anyhow::Result<BTreeMap<EmoteID, Emote>> {
         self.get_all(Self::TABLE_EMOTE)
     }
@@ -233,6 +232,10 @@ impl Storage {
     pub fn insert_stamp(&self, index: StampID, stamp: Stamp) -> anyhow::Result<()> {
         self.insert(Self::TABLE_STAMP, index, stamp)?;
         self.edit_meta(|meta| meta.count_stamp += 1)
+    }
+
+    pub fn remove_stamp(&self, index: StampID) -> anyhow::Result<()> {
+        self.remove(Self::TABLE_STAMP, index)
     }
 
     pub fn get_all_stamp(&self) -> anyhow::Result<BTreeMap<StampID, Stamp>> {

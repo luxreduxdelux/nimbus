@@ -30,9 +30,9 @@ pub struct StampValue {
 }
 
 impl StampValue {
-    pub fn from_request(emote: StampValueRequest, storage: &mut Storage) -> anyhow::Result<Self> {
-        let name = emote.name.clone();
-        let file = FileValue::new(String::default(), emote.data).insert(storage)?;
+    pub fn from_request(stamp: StampValueRequest, storage: &mut Storage) -> anyhow::Result<Self> {
+        let name = stamp.name.clone();
+        let file = FileValue::new(String::default(), stamp.data).insert(storage)?;
         Ok(Self {
             name,
             file: file.index,

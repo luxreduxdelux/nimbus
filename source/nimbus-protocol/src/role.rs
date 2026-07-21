@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 //================================================================
 
-use crate::storage::*;
+use crate::utility::*;
 
 //================================================================
 
@@ -26,17 +26,4 @@ pub struct RoleValue {
     pub color: Color,
     pub channel_view: bool,
     pub channel_edit: bool,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Color {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-}
-
-impl Color {
-    pub fn new(r: u8, g: u8, b: u8) -> Self {
-        Self { r, g, b }
-    }
 }

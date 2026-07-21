@@ -17,4 +17,4 @@ pub mod server;
 pub mod stamp;
 pub mod storage;
 pub mod token;
-mod utility;
+pub mod utility;

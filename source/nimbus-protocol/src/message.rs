@@ -3,6 +3,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::HashSet;
+use webpage::{Webpage, WebpageOptions};
 
 //================================================================
 
@@ -17,6 +18,38 @@ use crate::token::*;
 
 //================================================================
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageEmbed {
+    pub name: Option<String>,
+    pub body: Option<String>,
+    pub site: Option<String>,
+    pub link: Option<String>,
+    pub file: Option<FileMeta>,
+}
+
+impl MessageEmbed {
+    pub async fn new(link: &str, storage: &mut Storage) -> anyhow::Result<Self> {
+        let info = Webpage::from_url(link, WebpageOptions::default())?;
+
+        let property = info.html.opengraph.properties;
+
+        let file = if let Some(first) = info.html.opengraph.images.first() {
+            let data = reqwest::get(&first.url).await?.bytes().await?.to_vec();
+            Some(FileValue::new(String::default(), data).insert(storage)?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            name: property.get("title").cloned(),
+            body: property.get("description").cloned(),
+            site: property.get("site_name").cloned(),
+            link: property.get("url").cloned(),
+            file,
+        })
+    }
+}
+
 pub type MessageID = (ChannelID, u64);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +59,7 @@ pub struct Message {
     pub date: DateTime<Utc>,
     pub star: bool,
     pub reply: Option<MessageID>,
+    pub embed: Option<MessageEmbed>,
     pub react: HashMap<char, (AccountID, u64)>,
     pub value: MessageValue,
 }
@@ -69,6 +103,7 @@ impl<'a> Message {
             star: Default::default(),
             date: Utc::now(),
             reply,
+            embed: Default::default(),
             react: Default::default(),
             value,
         })

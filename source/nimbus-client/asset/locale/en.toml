@@ -10,7 +10,7 @@ all    = "All"
 
 [server]
 join            = "Join Server"
-address         = "IP Address"
+invite          = "Server Invite"
 name            = "Server Name"
 info            = "Server Info"
 icon            = "Server Icon"

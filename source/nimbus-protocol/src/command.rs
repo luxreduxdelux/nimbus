@@ -28,16 +28,19 @@ pub enum CommandClient {
     Leave,
     Nonce(Signature),
 
+    Configuration(Configuration),
+
     Channel(ChannelValue),
     ChannelModify(ChannelID, ChannelValue),
     ChannelRemove(ChannelID),
 
     Message(ChannelID, MessageValueRequest),
+    MessageModify(MessageID, MessageValueRequest),
+    MessageRemove(MessageID),
+    // TO-DO merge with MessageValueRequest?
     MessageReply(MessageID, MessageValueRequest),
     MessageReact(MessageID),
     MessageStar(MessageID),
-    MessageModify(MessageID, MessageValueRequest),
-    MessageRemove(MessageID),
 
     Emote(EmoteValueRequest),
     EmoteRemove(EmoteID),
@@ -62,8 +65,6 @@ pub enum CommandClient {
     ViewInvite,
 
     PollVote(MessageID, usize),
-
-    Configuration(Configuration),
 
     AccountChannel(ChannelID),
     //AccountActivity(Option<AccountActivity>),
@@ -109,11 +110,14 @@ pub enum CommandServer {
     Leave,
     Nonce(Challenge),
 
+    Configuration(Configuration),
+
     Channel(Channel),
     ChannelRemove(ChannelID),
 
     Message(Message),
     MessageRemove(MessageID),
+    MessageEmbed(MessageID, MessageEmbed),
 
     Role(Role),
     RoleRemove(RoleID),
